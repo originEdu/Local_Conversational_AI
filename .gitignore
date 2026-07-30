@@ -1,0 +1,38 @@
+# ── Unreal Engine ────────────────────────────────────
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+Build/
+
+# UE가 재생성하는 IDE 파일
+*.sln
+*.slnx
+*.suo
+*.sdf
+*.opensdf
+*.VC.db
+*.VC.opendb
+.vs/
+.vsconfig
+.idea/
+
+# ── Python (server) ──────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# ── 모델 가중치 · 런타임 산출물 ────────────────────────
+# 용량 크고 재다운로드 가능. 저장소에 넣지 않음
+server/models/
+server/out/
+*.pth
+*.ckpt
+*.onnx
+
+# ── 기타 ─────────────────────────────────────────────
+.env
+*.log
