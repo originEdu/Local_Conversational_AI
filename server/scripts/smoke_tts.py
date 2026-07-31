@@ -15,13 +15,17 @@ import soundfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.tts import XttsEngine  # noqa: E402
+from app.tts import create_engine  # noqa: E402
 
 TEXT = "안녕하세요. 오늘 하루는 어땠나요?"
 
 
 def main() -> int:
-    engine = XttsEngine()
+    name = sys.argv[1] if len(sys.argv) > 1 else None
+    engine = create_engine(name)
+    label = type(engine).__name__
+    print(f"엔진: {label}")
+
     result = engine.synthesize(TEXT)
 
     print(f"길이: {result.duration_ms}ms, 샘플레이트: {result.sample_rate}")
@@ -42,9 +46,10 @@ def main() -> int:
 
     out = Path(__file__).resolve().parents[1] / "out"
     out.mkdir(exist_ok=True)
-    soundfile.write(out / "smoke.wav", result.waveform, result.sample_rate)
+    path = out / f"smoke_{label.replace('Engine', '').lower()}.wav"
+    soundfile.write(path, result.waveform, result.sample_rate)
 
-    print(f"PASS: {out / 'smoke.wav'} 를 들어보고 한국어로 들리는지 확인한다")
+    print(f"PASS: {path} 를 들어보고 한국어로 들리는지 확인한다")
     return 0
 
 
