@@ -13,7 +13,7 @@
 - Python **3.11** 고정. coqui-tts가 3.13을 지원하지 않는다.
 - 대화 언어는 **한국어 전용**. 비한글 문자(영문, 숫자, 기호)는 viseme을 생성하지 않고 건너뛴다.
 - GPU VRAM **8GB**. XTTS는 반드시 `half=True`로 로드하고, wav2vec2 정렬기는 **CPU**에 둔다.
-- LLM 모델은 **`gemma3n:e2b`**, LLM 서버 주소는 **`http://192.168.3.26:8080`** (환경변수로 교체 가능).
+- LLM 모델은 **`gemma3n:e2b`**, LLM은 **로컬 Ollama** (`http://localhost:11434`, 환경변수로 교체 가능).
 - WebSocket 프레임 스키마는 설계 문서 5절 계약을 그대로 따른다. 필드명 변경 금지:
   - 수신: `{"type": "user_message", "text": str}`
   - 송신(발화): `{"type": "speech", "seq": int, "text": str, "audioBase64": str|None, "visemes": [{"v": str, "start": int, "end": int}]}`
@@ -25,21 +25,23 @@
 
 ## LLM 서버 주소
 
-LLM은 **`http://192.168.3.26:8080`** 에 있다. 백엔드 서버와 다른 머신이다.
+기본은 **같은 머신의 Ollama** (`http://localhost:11434`)다.
 
-주소는 코드에 하드코딩하지 않는다. `app/config.py`의 `llm_base_url` 하나만 보며, 환경변수 `LLM_BASE_URL`로 언제든 덮어쓸 수 있다. LLM을 백엔드와 같은 머신으로 옮기면 아래처럼 바꾼다.
+주소는 코드에 하드코딩하지 않는다. `app/config.py`의 `llm_base_url` 한 곳만 보며, 환경변수 `LLM_BASE_URL`로 언제든 덮어쓸 수 있다.
 
 ```bash
-# 원격 (기본값)
-set LLM_BASE_URL=http://192.168.3.26:8080
+# 로컬 Ollama (기본값)
+set LLM_BASE_URL=http://localhost:11434
 
-# 로컬로 전환
-set LLM_BASE_URL=http://127.0.0.1:8080
+# 다른 머신의 Ollama로 전환
+set LLM_BASE_URL=http://192.168.3.26:11434
 ```
 
-또는 `server/.env`에 적어두고 셸에서 읽어도 된다. `.env`는 `.gitignore`에 이미 들어 있다.
+또는 `server/.env`에 적어둔다. `.env`는 `.gitignore`에 이미 들어 있다.
 
-**주소를 바꿀 때 확인할 것:** 원격 주소를 쓰면 방화벽에서 해당 포트가 열려 있어야 하고, LLM 서버가 `127.0.0.1`이 아니라 `0.0.0.0`에 바인딩되어 있어야 외부에서 접속된다. 로컬로 되돌릴 때는 그 제약이 사라진다.
+**원격으로 바꿀 때 확인할 것:** 방화벽에서 포트가 열려 있어야 하고, Ollama가 `OLLAMA_HOST=0.0.0.0`으로 떠 있어야 외부에서 접속된다.
+
+**주의 — 주소만 바꿔서는 안 되는 경우가 있다.** `192.168.3.26:8080`에 떠 있는 llama.cpp 서버처럼 **OpenAI 호환 API**를 쓰는 대상으로 옮기려면 주소뿐 아니라 `app/llm.py` 구현을 바꿔야 한다. 경로가 `/api/chat`이 아니라 `/v1/chat/completions`이고, 응답도 줄 단위 JSON이 아니라 SSE(`data: {...}`)이며 토큰이 `choices[0].delta.content`에 들어 있다. 이 계획은 Ollama 형식만 구현한다.
 
 ## 명세에서 확정한 사항
 
@@ -786,7 +788,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Settings:
-    llm_base_url: str = os.getenv("LLM_BASE_URL", "http://192.168.3.26:8080")
+    llm_base_url: str = os.getenv("LLM_BASE_URL", "http://localhost:11434")
     llm_model: str = os.getenv("LLM_MODEL", "gemma3n:e2b")
     xtts_speaker_wav: str = os.getenv("XTTS_SPEAKER_WAV", "models/speaker.wav")
     xtts_device: str = os.getenv("XTTS_DEVICE", "cuda")
@@ -2152,7 +2154,11 @@ cd server && .venv/Scripts/pip install -r requirements.txt
 cd server && .venv/Scripts/python -m uvicorn app.main:app --port 8000
 ```
 
-LLM 서버(`LLM_BASE_URL`)도 응답 가능한 상태여야 한다.
+Ollama도 떠 있어야 한다:
+
+```bash
+ollama run gemma3n:e2b
+```
 
 - [ ] **Step 3: 검증 실행**
 
@@ -2179,8 +2185,11 @@ Expected: 문장별 프레임이 출력되고 마지막에 `PASS: speech N개 + 
    python -m venv .venv && .venv/Scripts/pip install -r requirements.txt
    ```
 
-2. LLM 서버가 `LLM_BASE_URL`(기본 `http://192.168.3.26:8080`)에서 응답하는지 확인한다.
-   같은 머신으로 옮기려면 `LLM_BASE_URL=http://127.0.0.1:8080` 으로 바꾼다.
+2. Ollama에 모델 받기
+
+   ```bash
+   ollama pull gemma3n:e2b
+   ```
 
 3. 참조 음성을 `models/speaker.wav`에 둔다 (6초 이상, 잡음 없는 한국어 발화)
 
@@ -2224,7 +2233,7 @@ TTS 스모크 (GPU 필요):
 
 | 변수 | 기본값 |
 |---|---|
-| `LLM_BASE_URL` | `http://192.168.3.26:8080` |
+| `LLM_BASE_URL` | `http://localhost:11434` |
 | `LLM_MODEL` | `gemma3n:e2b` |
 | `XTTS_SPEAKER_WAV` | `models/speaker.wav` |
 | `XTTS_DEVICE` | `cuda` |
