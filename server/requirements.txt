@@ -5,3 +5,7 @@ numpy==1.26.4
 soundfile==0.12.1
 pytest==8.3.4
 pytest-asyncio==0.25.0
+torch==2.5.1
+torchaudio==2.5.1
+coqui-tts==0.25.1
+hangul_romanize==0.1.0
