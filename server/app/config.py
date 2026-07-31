@@ -8,6 +8,8 @@ from dataclasses import dataclass
 class Settings:
     llm_base_url: str = os.getenv("LLM_BASE_URL", "http://localhost:11434")
     llm_model: str = os.getenv("LLM_MODEL", "gemma3n:e2b")
+    # "ollama" 또는 "openai". llama.cpp·vLLM처럼 OpenAI 호환 서버는 "openai".
+    llm_api: str = os.getenv("LLM_API", "ollama")
     tts_engine: str = os.getenv("TTS_ENGINE", "melo")
     xtts_speaker_wav: str = os.getenv("XTTS_SPEAKER_WAV", "models/speaker.wav")
     xtts_device: str = os.getenv("XTTS_DEVICE", "cuda")

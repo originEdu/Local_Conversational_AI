@@ -190,11 +190,22 @@ uvicorn app.main:app  # 이 프로젝트의 서버 코드 전부</code></pre>
 
 <li>
 <h3>히스토리에 쌓고 LLM 호출</h3>
-<p>이 연결의 대화 기록에 질문을 붙이고, system 프롬프트와 함께 Ollama에 스트리밍 요청을 보낸다.</p>
+<p>이 연결의 대화 기록에 질문을 붙이고, system 프롬프트와 함께 LLM에 스트리밍 요청을 보낸다.</p>
 <pre><code>[
   {"role": "system", "content": "너는 사용자와 편하게 대화하는 친구다..."},
   {"role": "user",   "content": "오늘 뭐 했어?"}
 ]</code></pre>
+<p>LLM은 두 종류를 붙일 수 있다. <code>LLM_API</code> 환경변수로 고른다.</p>
+<div class="tablewrap">
+<table>
+<tr><th></th><th><code>ollama</code> (기본)</th><th><code>openai</code></th></tr>
+<tr><td>대상</td><td>로컬 Ollama</td><td>원격 llama.cpp, vLLM</td></tr>
+<tr><td>경로</td><td><code>/api/chat</code></td><td><code>/v1/chat/completions</code></td></tr>
+<tr><td>응답 형식</td><td>줄 단위 JSON</td><td>SSE (<code>data: {...}</code>)</td></tr>
+<tr><td>토큰 위치</td><td><code>message.content</code></td><td><code>choices[0].delta.content</code></td></tr>
+</table>
+</div>
+<p>주소만 바꿔서는 안 된다. 경로도 응답 형식도 다르기 때문이다. 나머지 코드는 <code>stream_chat()</code> 하나만 부르므로 이 차이는 <code>llm.py</code> 안에서 끝난다.</p>
 </li>
 
 <li>

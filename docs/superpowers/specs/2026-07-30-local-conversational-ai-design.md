@@ -24,6 +24,7 @@
 | 백엔드 | FastAPI 단일 프로세스 | AI 파이프라인이 파이썬. 언어 경계를 만들지 않음 |
 | 통신 | WebSocket, 문장 단위 스트리밍 | 첫 발화까지의 지연 최소화 |
 | LLM | Ollama + `gemma3n:e2b` | 8GB VRAM에서 XTTS와 공존 가능. vLLM은 VRAM 선점으로 부적합 |
+| LLM 호출 방식 | `LLM_API`로 `ollama` / `openai` 선택 | 원격 llama.cpp는 OpenAI 호환이라 주소만 바꿔서는 안 됨 |
 | TTS | XTTS-v2 (fp16) | 음성 복제 품질. 연구/데모 전용이므로 CPML 라이선스 무관 |
 | 타임스탬프 | wav2vec2 CTC forced alignment (CPU) | MFA 대비 가볍고 빠름. 문장 스트리밍과 양립 |
 | viseme 단위 | 음절 | 한국어 입 모양은 중성(모음)이 지배. 매핑 표가 짧아짐 |

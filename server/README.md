@@ -93,6 +93,7 @@ XTTS 첫 실행은 CPML 동의 프롬프트에서 멈춘다. 미리 `COQUI_TOS_A
 |---|---|
 | `LLM_BASE_URL` | `http://localhost:11434` |
 | `LLM_MODEL` | `gemma3n:e2b` |
+| `LLM_API` | `ollama` |
 | `TTS_ENGINE` | `melo` |
 | `XTTS_SPEAKER_WAV` | `models/speaker.wav` |
 | `XTTS_DEVICE` | `cuda` |
@@ -101,6 +102,34 @@ XTTS 첫 실행은 CPML 동의 프롬프트에서 멈춘다. 미리 `COQUI_TOS_A
 | `SYSTEM_PROMPT` | `app/config.py` 참조 |
 
 `XTTS_DEVICE`는 이름과 달리 MeloTTS에도 적용된다.
+
+## LLM 서버 바꾸기
+
+`LLM_API`로 호출 방식을 고른다. 주소만 바꿔서는 안 된다. 경로도 응답 형식도 다르다.
+
+| | `ollama` | `openai` |
+|---|---|---|
+| 대상 | Ollama | llama.cpp server, vLLM |
+| 경로 | `/api/chat` | `/v1/chat/completions` |
+| 응답 형식 | 줄 단위 JSON | SSE (`data: {...}`) |
+| 토큰 위치 | `message.content` | `choices[0].delta.content` |
+| 종료 신호 | `done: true` | `data: [DONE]` 또는 `finish_reason` |
+
+원격 llama.cpp에 붙일 때:
+
+```bash
+LLM_API=openai LLM_BASE_URL=http://192.168.3.26:8080 .venv/Scripts/python -m uvicorn app.main:app --port 8000
+```
+
+llama.cpp는 `LLM_MODEL`을 무시하고 기동 시 올린 모델을 쓴다. 그래도 필드는 보낸다.
+
+llama.cpp가 원격에서 안 잡히면 `--host 0.0.0.0`으로 띄웠는지부터 본다.
+기본값이 `127.0.0.1`이라 로컬 접속만 받는다. 확인은 원격에서 `ss -tlnp | grep 8080`.
+
+`openai` 경로는 요청에 `chat_template_kwargs.enable_thinking = false`를 넣는다.
+추론형 모델은 답변 전에 사고 토큰을 수백 개 만드는데 발화에 쓰이지 않아 전부 버려진다.
+`gemma-4-E2B-it-Q8_0` 실측으로 298토큰 24.2초 중 사고가 278토큰이었다.
+끄면 같은 질문이 13토큰 0.94초가 된다.
 
 ## 구조
 

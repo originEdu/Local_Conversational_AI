@@ -2292,6 +2292,8 @@ git add server/scripts/ws_client.py server/README.md server/requirements.txt && 
 | `split_stream` flush | 남은 게 공백뿐이면 버퍼 유지 | 무조건 비움. flush는 스트림 종료를 뜻함 |
 | 문장 확정 조건 | 길이만 검사 | 발음할 내용(`isalnum`)이 있어야 확정. LLM이 이모지만 따로 뱉으면 TTS가 0.9초간 무의미한 소리를 냄 |
 | 추가 의존성 | 없음 | `hangul_romanize`(XTTS 한국어), `eunjeon`(Windows g2pkk), MeloTTS 런타임 의존성 다수 |
+| LLM API | Ollama 형식만 구현 | `LLM_API`로 `openai`(llama.cpp·vLLM) 추가. 원격 LLM이 llama.cpp였음 |
+| 사고 토큰 | 고려 안 함 | `openai` 경로에서 `enable_thinking=false` 강제. 추론형 모델이 버려질 토큰 278개를 만들어 첫 프레임이 31.9초까지 늘어남 |
 
 ### 남은 문제 — 정렬 품질
 
