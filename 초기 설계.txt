@@ -2,3 +2,19 @@
 2. STT, TTS는 나중에 붙일 예정이고 사용자가 채팅으로 단어를 입력하면 WebServer를 거쳐 LocalLLM에서 답변을 주는 방식으로 설계
 3. 지금은 답변 텍스트를 시각적으로 보여주고 이에 대한 입모양을 메타휴먼이 비슷하게 따라 하는 방식으로 설계
 4. 추가적으로 필요한 요구사항이 있다면 질문
+
+오디오 없이 입모양 어떻게 구동? (TTS 나중 = 지금 소리 없음) 대한 질문에 대한 답변
+AI가 제공해주는 선택지 조사
+-> 실무에서 가장 많이 쓰는 '하이브리드(혼합) 접근법' 이라는 지식 습득
+1. TTS 오디오 생성 시 '타임스탬프(Textgrid / Viseme Time)'를 함께 뽑아냄
+2. 이 타임스탬프를 언리얼 엔진의 ARKit 블렌드 셰이프에 1:1로 꽂음
+
+응답 전달 방식 -> 고민했음 WebSocket이냐 REST냐 -> 확장성을 위해 WebSocket으로 결정
+
+실시간 3D 가상 인간(Interactive AI Avatar) 프로젝트에서 자주사용하는 시스템 구조 질문
+현재 대화형 가상 인간 시스템의 글로벌 표준 패턴은
+Unreal MetaHuman + WebSocket + FastAPI Gateway + Local LLM (vLLM) + TTS/Aligner (Sidecar) 조합
+
+
+메타휴먼 임포트하고 턱 움직임까지 확인했어
+참고로 언리얼 설치된 폴더는 unreal이 아니라 UE5_Client야

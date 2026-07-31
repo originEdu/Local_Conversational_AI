@@ -3,13 +3,13 @@
 using UnrealBuildTool;
 using System.Collections.Generic;
 
-public class unrealTarget : TargetRules
+public class UE5_ClientEditorTarget : TargetRules
 {
-	public unrealTarget(TargetInfo Target) : base(Target)
+	public UE5_ClientEditorTarget( TargetInfo Target) : base(Target)
 	{
-		Type = TargetType.Game;
+		Type = TargetType.Editor;
 		DefaultBuildSettings = BuildSettingsVersion.V7;
 		IncludeOrderVersion = EngineIncludeOrderVersion.Unreal5_8;
-		ExtraModuleNames.Add("unreal");
+		ExtraModuleNames.Add("UE5_Client");
 	}
 }
