@@ -252,14 +252,26 @@ UE 쪽에서는 목표 커브값으로 `FInterpTo`한다. 이산 전환을 그�
 
 | 상주 | 배치 | 사용량 |
 |---|---|---|
-| `gemma3n:e2b` (Ollama, Q4) | GPU | ~3.0GB |
-| XTTS-v2 (`half=True`) | GPU | ~2.5GB |
+| `gemma3n:e2b` (Ollama, Q4) | GPU | ~3.0GB (추정) |
+| XTTS-v2 (fp32) | GPU | **1.9GB (실측)** |
 | wav2vec2 CTC 한국어 | **CPU** | RAM ~1GB |
-| 합계 | GPU | **~5.5GB / 8GB** |
+| 합계 | GPU | **~4.9GB / 8GB** |
 
-XTTS를 fp32로 로드하면 4.5GB를 먹어 여유가 사라진다. `half=True`는 선택이 아니라 필수다.
-wav2vec2를 GPU에 올리면 합계 6.2GB가 되어 추론 중 활성 메모리까지 고려하면 위험하다.
-CPU에서 문장당 100~200ms면 충분하므로 GPU에 올릴 이유가 없다.
+**fp16 로드는 포기했다.** `tts_model.half()`를 부르면 speaker encoder까지 fp16이 되는데
+입력 파형은 fp32로 들어와 conv1d에서 죽는다. 실제 에러는 다음과 같다.
+
+```
+RuntimeError: Input type (torch.cuda.FloatTensor) and weight type
+(torch.cuda.HalfTensor) should be the same
+```
+
+fp32로도 실측 1892MB에 그쳐(RTX 2060 SUPER 8GB 기준) 예산 안에 들어온다. 당초 우려했던
+4.5GB는 과대 추정이었다.
+
+wav2vec2를 GPU에 올릴 이유는 여전히 없다. CPU에서 문장당 100~200ms면 충분하다.
+
+한국어 합성에는 `hangul_romanize` 패키지가 추가로 필요하다. 없으면
+`Korean requires: hangul_romanize`로 실패한다.
 
 ## 8. 실패 처리
 

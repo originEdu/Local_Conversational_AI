@@ -1,0 +1,35 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1
+numpy==1.26.4
+soundfile==0.12.1
+pytest==8.3.4
+pytest-asyncio==0.25.0
+websockets==17.0
+torch==2.5.1
+torchaudio==2.5.1
+coqui-tts==0.25.1
+hangul_romanize==0.1.0
+
+# MeloTTS 런타임 의존성.
+# MeloTTS 본체는 이 파일로 설치되지 않는다. 아래 명령을 따로 실행한다.
+#
+#   pip install --no-deps git+https://github.com/myshell-ai/MeloTTS.git
+#
+# --no-deps가 필수다. MeloTTS는 transformers==4.27.4를 못박는데 coqui-tts는
+# 그보다 높은 버전을 요구해서, 그냥 설치하면 XTTS가 깨진다.
+# 한국어만 쓰더라도 MeloTTS가 전 언어 모듈을 임포트하므로 중국어·일본어
+# 의존성까지 필요하다.
+cn2an==0.5.24
+pypinyin==0.55.0
+jieba==0.42.1
+pykakasi==2.3.0
+fugashi==1.5.2
+unidic_lite==1.0.8
+mecab-python3==1.0.12
+g2p_en==2.1.0
+jamo==0.4.1
+g2pkk==0.1.2
+eunjeon==0.4.0
+cached_path==1.8.10
+txtsplit==1.0.0
