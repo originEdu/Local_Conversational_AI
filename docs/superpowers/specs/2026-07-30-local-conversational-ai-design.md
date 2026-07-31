@@ -250,12 +250,32 @@ UE 쪽에서는 목표 커브값으로 `FInterpTo`한다. 이산 전환을 그�
 
 ## 7. VRAM 예산 (8GB)
 
+모두 실측치다 (RTX 2060 SUPER 8GB, MeloTTS 기준 구성).
+
 | 상주 | 배치 | 사용량 |
 |---|---|---|
-| `gemma3n:e2b` (Ollama, Q4) | GPU | ~3.0GB (추정) |
-| XTTS-v2 (fp32) | GPU | **1.9GB (실측)** |
+| `gemma3n:e2b` (Ollama, Q4_K_M) | GPU | **1.6GB** |
+| MeloTTS (기본 엔진) | GPU | **0.9GB** |
+| XTTS-v2 (fp32, 대안 엔진) | GPU | 1.9GB |
 | wav2vec2 CTC 한국어 | **CPU** | RAM ~1GB |
-| 합계 | GPU | **~4.9GB / 8GB** |
+| 데스크톱 앱 (탐색기, 브라우저 등) | GPU | ~1.2GB |
+| 합계 (MeloTTS 구성) | GPU | **3.7GB / 8GB** |
+
+`gemma3n:e2b`의 디스크 크기는 5.6GB지만 실제 VRAM 점유는 1.6GB다. E2B는 레이어별
+임베딩 중 일부만 상주시킨다. 디스크 크기로 예산을 잡으면 안 된다.
+
+여유가 4GB 이상이므로 정렬기를 GPU로 올릴 수도 있다. 다만 CPU에서 문장당
+100~200ms면 충분해 실익이 없다.
+
+**주의 — CUDA 프로세스를 여러 개 띄우지 말 것.** 서버 인스턴스를 두 개 동시에
+실행했더니 Ollama의 llama-server가 죽었다.
+
+```
+CUDA error: shared object initialization failed
+llama-server process has terminated: exit status 0xc0000409
+```
+
+VRAM 총량이 부족해서가 아니다. 인스턴스 하나만 띄우면 같은 조합이 문제없이 돈다.
 
 **fp16 로드는 포기했다.** `tts_model.half()`를 부르면 speaker encoder까지 fp16이 되는데
 입력 파형은 fp32로 들어와 conv1d에서 죽는다. 실제 에러는 다음과 같다.

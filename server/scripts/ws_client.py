@@ -15,6 +15,7 @@ import base64
 import io
 import json
 import sys
+import time
 from pathlib import Path
 
 import soundfile
@@ -59,12 +60,18 @@ async def main(text: str) -> int:
     problems: list[str] = []
     speech_count = 0
     saw_turn_end = False
+    first_frame_ms = None
 
     async with connect(URL) as ws:
+        sent_at = time.monotonic()
         await ws.send(json.dumps({"type": "user_message", "text": text}))
 
         while True:
             frame = json.loads(await ws.recv())
+
+            if first_frame_ms is None:
+                first_frame_ms = int((time.monotonic() - sent_at) * 1000)
+                print(f"  첫 프레임까지 {first_frame_ms}ms")
 
             if frame["type"] == "error":
                 print(f"  error: {frame['code']} — {frame['message']}")

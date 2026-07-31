@@ -161,13 +161,13 @@
 │     │ HTTP 스트림               │ 직접 함수 호출      │
 │     ▼                           ▼                     │
 │  (외부 프로세스)          TTS → 정렬 → viseme 매핑     │
-│                           MeloTTS   (GPU 0.8GB)       │
+│                           MeloTTS   (GPU 0.9GB)       │
 │                           wav2vec2  (CPU)             │
 │                           매퍼      (순수 파이썬)      │
 └───────────────────────────────────────────────────────┘
          │
          ▼
-┌─ Ollama :11434 ── gemma3n:e2b (GPU 약 3GB) ───────────┐
+┌─ Ollama :11434 ── gemma3n:e2b (GPU 1.6GB) ────────────┐
 └───────────────────────────────────────────────────────┘</code></pre>
 
 <p>프로세스는 두 개다.</p>
@@ -306,7 +306,7 @@ HTTP 홉이 생긴다. 취미 프로젝트에서 그 비용을 치를 이유가 
 지배되므로 음절 단위로도 화면에서 차이가 거의 없다.</p>
 
 <h3>왜 정렬기를 CPU에 두나</h3>
-<p>GPU 8GB를 LLM(약 3GB)과 TTS(0.8GB)가 쓴다. 정렬기는 문장당 100~200ms면 충분해서
+<p>GPU 8GB를 LLM(1.6GB)과 TTS(0.9GB)가 쓴다. 정렬기는 문장당 100~200ms면 충분해서
 GPU에 올릴 이유가 없다.</p>
 
 <h2><span class="num">4</span>고장 나도 대화는 계속된다</h2>
@@ -362,7 +362,7 @@ GPU에 올릴 이유가 없다.</p>
     <tr><td>발음</td><td class="ok">자연스러움</td><td class="warn">외국인 억양</td></tr>
     <tr><td>음성 복제</td><td>불가</td><td>가능 (참조 음성 6초)</td></tr>
     <tr><td>같은 문장 길이</td><td>4357ms</td><td>8534ms</td></tr>
-    <tr><td>VRAM</td><td>802MB</td><td>1899MB</td></tr>
+    <tr><td>VRAM</td><td>902MB</td><td>1899MB</td></tr>
     <tr><td>라이선스</td><td>MIT</td><td>CPML (비상업 전용)</td></tr>
   </tbody>
 </table>
@@ -386,6 +386,28 @@ GPU에 올릴 이유가 없다.</p>
     <tr><td>LLM 죽었을 때</td><td class="ok">error 프레임, 서버 생존</td></tr>
   </tbody>
 </table>
+</div>
+
+<p>실측 속도 (RTX 2060 SUPER 8GB, MeloTTS GPU):</p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th></th><th>값</th></tr></thead>
+  <tbody>
+    <tr><td>첫 프레임까지</td><td class="ok">2577ms</td></tr>
+    <tr><td>3문장 턴 전체</td><td>15.7초</td></tr>
+    <tr><td>VRAM 합계</td><td>3.7GB / 8GB</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>첫 프레임 2.6초면 설계 목표(3초 이내 발화 시작)를 만족한다. TTS를 CPU로 내리면
+턴 전체가 25초로 늘어난다.</p>
+
+<div class="callout">
+  <p><strong>CUDA 프로세스를 여러 개 띄우면 안 된다.</strong> 서버를 두 개 동시에 실행했더니
+  Ollama의 llama-server가 <code>CUDA error: shared object initialization failed</code>로 죽었다.
+  VRAM 총량 문제가 아니라 컨텍스트 충돌이다.</p>
 </div>
 
 <p><strong>UE 클라이언트는 시작 전이다.</strong> 얼굴 커브가 움직인다는 것만 확인했다
