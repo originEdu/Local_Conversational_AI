@@ -1674,7 +1674,20 @@ git add server/app/main.py server/tests/test_ws.py && git commit -m "feat(server
 
 여기부터는 GPU와 모델 파일이 필요하다. 단위 테스트로 검증할 수 없으므로 명시적 통과 기준을 가진 스모크 스크립트로 확인한다.
 
-**선행 조건:** 참조 음성 wav 파일(6초 이상, 16kHz 이상, 잡음 없음)을 `server/models/speaker.wav`에 둔다. `server/models/`는 `.gitignore`에 이미 들어 있다.
+**선행 조건 1 — 참조 음성.** wav 파일을 `server/models/speaker.wav`에 둔다. `server/models/`는 `.gitignore`에 이미 들어 있다.
+
+| 항목 | 기준 |
+|---|---|
+| 길이 | 6초 이상, 10~20초 권장 (길수록 복제 품질이 올라간다) |
+| 화자 | 1명. 겹치는 목소리 없음 |
+| 배경 | 잡음·음악·에코 없음. 울리는 방에서 녹음하면 그 울림까지 복제된다 |
+| 포맷 | WAV PCM, 모노, 22050Hz 이상 |
+
+**선행 조건 2 — 라이선스 동의 우회.** XTTS는 첫 실행에서 모델(~2GB)을 내려받으며 터미널에 CPML 동의 프롬프트를 띄운다. 스크립트로 돌리면 입력 대기에서 멈춘 것처럼 보인다. 아래 환경변수를 미리 설정한다.
+
+```bash
+set COQUI_TOS_AGREED=1
+```
 
 - [ ] **Step 1: 의존성 추가**
 
@@ -2209,11 +2222,17 @@ WebSocket 엔드포인트: `ws://localhost:8000/ws`
 .venv/Scripts/python -m pytest -v
 ```
 
-TTS 스모크 (GPU 필요):
+TTS 스모크 (GPU + `models/speaker.wav` 필요):
+
+```bash
+set COQUI_TOS_AGREED=1
+```
 
 ```bash
 .venv/Scripts/python scripts/smoke_tts.py
 ```
+
+`COQUI_TOS_AGREED`를 설정하지 않으면 첫 실행이 라이선스 동의 프롬프트에서 멈춘다.
 
 정렬 스모크 (GPU 필요):
 
