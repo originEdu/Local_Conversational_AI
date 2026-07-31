@@ -15,11 +15,13 @@ import base64
 import io
 import json
 import sys
+from pathlib import Path
 
 import soundfile
 from websockets.asyncio.client import connect
 
 URL = "ws://localhost:8000/ws"
+OUT_DIR = Path(__file__).resolve().parents[1] / "out"
 
 
 def check_frame(frame: dict, expected_seq: int) -> list[str]:
@@ -41,7 +43,10 @@ def check_frame(frame: dict, expected_seq: int) -> list[str]:
             data, rate = soundfile.read(
                 io.BytesIO(base64.b64decode(frame["audioBase64"]))
             )
-            print(f"    오디오 {len(data) * 1000 // rate}ms @ {rate}Hz")
+            OUT_DIR.mkdir(exist_ok=True)
+            path = OUT_DIR / f"reply_{frame['seq']}.wav"
+            soundfile.write(path, data, rate)
+            print(f"    오디오 {len(data) * 1000 // rate}ms @ {rate}Hz -> {path.name}")
         except Exception as error:
             problems.append(f"오디오 디코딩 실패: {error}")
     else:
