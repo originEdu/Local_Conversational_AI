@@ -13,16 +13,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.align import CtcAligner  # noqa: E402
 from app.hangul import decompose  # noqa: E402
-from app.tts import XttsEngine  # noqa: E402
+from app.tts import create_engine  # noqa: E402
 
 TEXT = "안녕하세요. 오늘 하루는 어땠나요?"
 
 
 def main() -> int:
-    result = XttsEngine().synthesize(TEXT)
+    engine = create_engine(sys.argv[1] if len(sys.argv) > 1 else None)
+    result = engine.synthesize(TEXT)
     syllables = decompose(TEXT)
     timed = CtcAligner().align(result, syllables)
 
+    print(f"엔진: {type(engine).__name__}")
     print(f"오디오 길이: {result.duration_ms}ms, 음절 수: {len(syllables)}")
     for syllable, start, end in timed:
         print(f"  {syllable.char}  {start:>5} ~ {end:>5}ms")

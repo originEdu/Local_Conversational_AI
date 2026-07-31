@@ -2273,9 +2273,42 @@ git add server/scripts/ws_client.py server/README.md server/requirements.txt && 
 
 전부 통과하면 백엔드가 완결된 것이다. UE 클라이언트는 이 계약에 붙이기만 하면 된다.
 
-- [ ] `pytest -v` 53개 통과 (모델 없이)
-- [ ] `smoke_tts.py` PASS, `out/smoke.wav`가 한국어로 들림
-- [ ] `smoke_align.py` PASS 또는 균등 분배 폴백으로 진행 결정 기록
-- [ ] `ws_client.py` PASS
-- [ ] Ollama를 끈 상태에서 `ws_client.py`를 돌리면 `error` 프레임이 오고 서버가 죽지 않음
-- [ ] `models/speaker.wav`를 지운 상태에서 돌리면 `audioBase64: null` 프레임이 오고 자막은 나옴
+- [x] `pytest -v` 통과 (모델 없이) — 56개로 증가, 이모지 처리 테스트 3개 추가
+- [x] `smoke_tts.py` PASS — `melo`/`xtts` 양쪽 생성 확인
+- [x] `smoke_align.py` PASS — 단 결과 품질은 미흡, 아래 참조
+- [x] `ws_client.py` PASS
+- [ ] LLM이 죽은 상태에서 `ws_client.py`를 돌리면 `error` 프레임이 오고 서버가 죽지 않음
+- [ ] `models/speaker.wav`를 지운 상태에서 돌리면 `audioBase64: null` 프레임이 오고 자막은 나옴 (XTTS 전용)
+
+## 실행 중 계획과 달라진 것
+
+계획대로 되지 않아 구현에서 바꾼 부분이다.
+
+| 항목 | 계획 | 실제 |
+|---|---|---|
+| XTTS fp16 | `half=True` 필수 | 포기. speaker encoder까지 fp16이 되어 fp32 입력과 충돌. fp32 실측 1892MB로 예산 내 |
+| TTS 엔진 | XTTS 고정 | `TTS_ENGINE`으로 `melo`/`xtts` 선택. XTTS 한국어가 로마자 변환을 거쳐 외국인 억양이 됨 |
+| 모델 로딩 | `build_session`에서 지연 로딩 | lifespan으로 이동. 첫 연결에서 로딩하면 이벤트 루프가 막혀 WebSocket 핸드셰이크가 타임아웃 |
+| `split_stream` flush | 남은 게 공백뿐이면 버퍼 유지 | 무조건 비움. flush는 스트림 종료를 뜻함 |
+| 문장 확정 조건 | 길이만 검사 | 발음할 내용(`isalnum`)이 있어야 확정. LLM이 이모지만 따로 뱉으면 TTS가 0.9초간 무의미한 소리를 냄 |
+| 추가 의존성 | 없음 | `hangul_romanize`(XTTS 한국어), `eunjeon`(Windows g2pkk), MeloTTS 런타임 의존성 다수 |
+
+### 남은 문제 — 정렬 품질
+
+`smoke_align.py`는 통과하지만 결과가 쓸 만하지 않다. XTTS 오디오 기준 측정치다.
+
+```
+안      0 ~    20ms
+녕     20 ~    40ms
+하     40 ~  2564ms     <- 한 음절에 2.5초
+세   2564 ~  2665ms
+```
+
+통과 기준이 "마지막 음절의 end가 오디오 길이의 ±10%"뿐이라 중간이 아무리 뭉개져도
+걸러지지 않는다. 기준 자체가 약하다.
+
+원인 후보 두 가지다. 첫째, XTTS 오디오의 dead air와 뭉개진 발음. 둘째, wav2vec2
+체크포인트가 이 오디오 분포와 안 맞음. MeloTTS 오디오로 다시 측정해 첫 번째를
+먼저 배제해야 한다.
+
+기준을 강화한다면 "음절 하나가 전체 길이의 30%를 넘지 않는다" 정도를 추가한다.

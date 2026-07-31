@@ -9,6 +9,15 @@ MIN_LENGTH = 10
 MAX_LENGTH = 120
 
 
+def _is_speakable(text: str) -> bool:
+    """읽을 내용이 있는지 본다.
+
+    LLM이 문장 끝에 이모지만 따로 붙이는 경우가 잦다. 그대로 TTS에 넘기면
+    의미 없는 소리가 1초 가까이 난다.
+    """
+    return any(char.isalnum() for char in text)
+
+
 def split_stream(buffer: str, *, flush: bool = False) -> tuple[list[str], str]:
     sentences: list[str] = []
     start = 0
@@ -30,4 +39,4 @@ def split_stream(buffer: str, *, flush: bool = False) -> tuple[list[str], str]:
             sentences.append(rest.strip())
         rest = ""
 
-    return [s for s in sentences if s], rest
+    return [s for s in sentences if _is_speakable(s)], rest

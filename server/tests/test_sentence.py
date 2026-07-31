@@ -48,6 +48,23 @@ def test_newline_is_a_boundary():
     assert rest == "둘째"
 
 
+def test_emoji_only_segment_is_dropped():
+    # LLM이 문장 끝에 이모지만 붙이는 경우가 잦다. 발음할 내용이 없으므로
+    # TTS로 넘기면 의미 없는 소리만 난다.
+    sentences, rest = split_stream("반가워요 오늘도 좋네요. 😊", flush=True)
+    assert sentences == ["반가워요 오늘도 좋네요."]
+    assert rest == ""
+
+
+def test_punctuation_only_segment_is_dropped():
+    assert split_stream("...!!!", flush=True) == ([], "")
+
+
+def test_segment_with_hangul_and_emoji_is_kept():
+    sentences, _ = split_stream("좋은 하루 보내세요 😊", flush=True)
+    assert sentences == ["좋은 하루 보내세요 😊"]
+
+
 def test_force_split_at_max_length():
     text = "가" * 130
     sentences, rest = split_stream(text)
