@@ -16,5 +16,6 @@ AI가 제공해주는 선택지 조사
 Unreal MetaHuman + WebSocket + FastAPI Gateway + Local LLM (vLLM) + TTS/Aligner (Sidecar) 조합
 
 
-메타휴먼 임포트하고 턱 움직임까지 확인했어
-참고로 언리얼 설치된 폴더는 unreal이 아니라 UE5_Client야
+입모양 확인법
+1. 하드코딩으로 입 모양 움직임 확인
+2. Map으로 11개의 viseme 확인 -> 어색해서 구조체로 또 수정함

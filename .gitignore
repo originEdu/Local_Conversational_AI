@@ -17,6 +17,12 @@ Build/
 .vsconfig
 .idea/
 
+# ── MetaHuman 에셋 ───────────────────────────────────
+# 900MB 넘고 GitHub LFS 무료 할당(1GB)을 한 번에 소진한다.
+# MetaHuman Creator에서 재생성 가능. README 참고
+UE5_Client/Content/MetaHumans/
+UE5_Client/Content/TestMetaHumanCharacter/
+
 # ── Python (server) ──────────────────────────────────
 __pycache__/
 *.py[cod]
@@ -36,3 +42,7 @@ server/out/
 # ── 기타 ─────────────────────────────────────────────
 .env
 *.log
+.claude/settings.local.json
+.DS_Store
+Thumbs.db
+desktop.ini
