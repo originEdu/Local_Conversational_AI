@@ -1,3 +1,13 @@
+# Windows 빌드 메모.
+# - eunjeon은 빌드 격리 안에서 MSVC를 못 찾는다. 먼저 따로 설치한다.
+#     "…\VC\Auxiliary\Build\vcvarsall.bat" x64
+#     pip install eunjeon==0.4.0 --no-build-isolation
+# - torch는 이 파일로 설치하면 Windows에서 CPU 전용 휠이 온다. 먼저 따로 설치한다.
+#     pip install torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
+
+setuptools<81  # eunjeon이 pkg_resources를 import한다. 81에서 제거됐다.
+nltk==3.9.1  # 3.10은 .venv가 프로젝트 안에 있으면 site-packages를 cwd로 오인해 import를 막는다.
+
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 httpx==0.28.1
