@@ -49,6 +49,7 @@ struct FSpeechFrame
 	TArray<FVisemeSpan> Visemes;
 };
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnTurnStarted);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSpeechFrame, const FSpeechFrame&, Frame);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnTurnEnd, int32, Seq);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnServerError, const FString&, Code, const FString&, Message);
@@ -91,6 +92,10 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Conversation")
 	UAudioComponent* PlaySpeech(const FSpeechFrame& Frame);
+
+	/** user_message를 실제로 보낸 직후. 여기서 turn_end까지가 서버 응답 대기 구간이다. */
+	UPROPERTY(BlueprintAssignable, Category = "Conversation")
+	FOnTurnStarted OnTurnStarted;
 
 	UPROPERTY(BlueprintAssignable, Category = "Conversation")
 	FOnSpeechFrame OnSpeech;

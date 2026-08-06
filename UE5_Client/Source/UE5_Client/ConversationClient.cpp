@@ -124,6 +124,7 @@ void UConversationClient::SendUserMessage(const FString& Text)
 	ExpectedSeq = 0;
 	UE_LOG(LogConversation, Log, TEXT("전송: %s"), *Text);
 	Socket->Send(Serialized);
+	OnTurnStarted.Broadcast();
 }
 
 bool UConversationClient::IsConnected() const
