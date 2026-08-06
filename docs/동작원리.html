@@ -167,15 +167,15 @@
 └───────────────────────────────────────────────────────┘
          │
          ▼
-┌─ Ollama :11434 ── gemma3n:e2b (GPU 1.6GB) ────────────┐
+┌─ (원격) llama.cpp :8080 ── EXAONE-3.5-7.8B ───────────┐
 └───────────────────────────────────────────────────────┘</code></pre>
 
-<p>프로세스는 두 개다.</p>
+<p>LLM은 2026-08-06부터 다른 PC의 llama.cpp를 쓴다. OpenAI 호환 API라 <code>LLM_API=openai</code>로
+붙는다. 그래서 이 머신에서 띄울 프로세스는 하나뿐이다.</p>
 
-<pre><code>ollama serve          # 설치만 하면 됨. 작성한 코드 없음
-uvicorn app.main:app  # 이 프로젝트의 서버 코드 전부</code></pre>
+<pre><code>uvicorn app.main:app  # 이 프로젝트의 서버 코드 전부</code></pre>
 
-<p>UE는 서버 하나만 안다. Ollama도 TTS도 UE에 노출되지 않는다.</p>
+<p>UE는 서버 하나만 안다. LLM도 TTS도 UE에 노출되지 않는다.</p>
 
 <h2><span class="num">2</span>한 번의 대화가 흐르는 순서</h2>
 
@@ -206,6 +206,8 @@ uvicorn app.main:app  # 이 프로젝트의 서버 코드 전부</code></pre>
 </table>
 </div>
 <p>주소만 바꿔서는 안 된다. 경로도 응답 형식도 다르기 때문이다. 나머지 코드는 <code>stream_chat()</code> 하나만 부르므로 이 차이는 <code>llm.py</code> 안에서 끝난다.</p>
+
+<p>현재는 <code>openai</code>를 쓴다. <code>run.bat</code>가 <code>LLM_API</code>와 <code>LLM_BASE_URL</code>을 설정한다.</p>
 </li>
 
 <li>
@@ -330,10 +332,10 @@ GPU에 올릴 이유가 없다.</p>
 <table>
   <thead><tr><th>고장</th><th>결과</th></tr></thead>
   <tbody>
-    <tr><td>Ollama가 죽음</td><td><code>{"type":"error","code":"LLM_UNAVAILABLE"}</code>. 서버는 안 죽는다</td></tr>
+    <tr><td>LLM이 죽음</td><td><code>{"type":"error","code":"LLM_UNAVAILABLE"}</code>. 서버는 안 죽는다</td></tr>
     <tr><td>TTS 실패</td><td><code>audioBase64: null</code>, <code>visemes: []</code>. 자막만 나가고 입은 가만있다</td></tr>
     <tr><td>정렬 실패</td><td>오디오 길이를 음절 수로 균등 분배. 정확도는 떨어지지만 멈추지 않는다</td></tr>
-    <tr><td>연결 끊김</td><td>UE가 3회 재연결. <strong>대화 기록은 초기화된다</strong> (연결 = 세션)</td></tr>
+    <tr><td>연결 끊김</td><td>UE가 지수 백오프(1→15초 상한)로 계속 재연결. 재생 큐는 즉시 비운다. <strong>대화 기록은 초기화된다</strong> (연결 = 세션)</td></tr>
     <tr><td>히스토리 초과</td><td>오래된 대화부터 버린다. system 프롬프트는 항상 유지</td></tr>
   </tbody>
 </table>
@@ -344,7 +346,7 @@ GPU에 올릴 이유가 없다.</p>
 <pre><code>server/app/
   main.py       FastAPI 앱, WebSocket 엔드포인트, 모델 사전 로딩
   session.py    대화 히스토리, 턴 오케스트레이션
-  llm.py        Ollama 스트리밍 호출
+  llm.py        LLM 스트리밍 호출 (Ollama / OpenAI 호환)
   sentence.py   토큰 스트림을 문장으로 분할
   pipeline.py   speech 프레임 조립, 실패 폴백
   tts.py        TTS 프로토콜, MeloTTS·XTTS 구현체, WAV 인코딩
@@ -418,15 +420,18 @@ GPU에 올릴 이유가 없다.</p>
 <div class="callout">
   <p><strong>CUDA 프로세스를 여러 개 띄우면 안 된다.</strong> 서버를 두 개 동시에 실행했더니
   Ollama의 llama-server가 <code>CUDA error: shared object initialization failed</code>로 죽었다.
-  VRAM 총량 문제가 아니라 컨텍스트 충돌이다.</p>
+  VRAM 총량 문제가 아니라 컨텍스트 충돌이다. (LLM을 원격으로 옮긴 뒤로는 해당 없다.)</p>
 </div>
 
-<p><strong>UE 클라이언트는 시작 전이다.</strong> 얼굴 커브가 움직인다는 것만 확인했다
-(<code>CTRL_expressions_jawOpen</code>).</p>
+<p><strong>UE 클라이언트는 대화가 도는 상태다 (2026-08-06).</strong> 입력 → 응답 → 오디오 재생 →
+말풍선 표시까지 확인했다. 남은 건 입 모양이다.</p>
 
 <h2><span class="num">8</span>실행 방법</h2>
 
-<pre><code>ollama serve</code></pre>
+<pre><code>server/run.bat</code></pre>
+
+<p><code>LLM_API=openai</code>와 원격 llama.cpp 주소를 잡아준다. 직접 띄우려면:</p>
+
 <pre><code>cd server && .venv/Scripts/python -m uvicorn app.main:app --port 8000</code></pre>
 
 <p><code>모델 로딩 완료</code> 로그가 찍힌 뒤에 접속한다. UE 없이 확인하려면:</p>
@@ -435,18 +440,14 @@ GPU에 올릴 이유가 없다.</p>
 
 <h2><span class="num">9</span>다음 단계</h2>
 
-<p>UE 클라이언트 작업이다. 순서는 리스크가 큰 것부터다.</p>
+<p>UE 클라이언트의 오디오·통신·UI는 끝났다. 남은 것은 둘이다.</p>
 
 <ol>
-  <li><strong>런타임 오디오 재생</strong> — UE는 wav 바이트를 그대로 재생하지 못한다.
-  <code>USoundWaveProcedural</code>로 직접 큐잉해야 한다. 여기서 막히면 나머지가 무의미하므로
-  가장 먼저 확인한다.</li>
-  <li><strong>WebSocket 연결</strong> — <code>Build.cs</code>에 <code>WebSockets</code>,
-  <code>Json</code>, <code>JsonUtilities</code> 추가. 프레임 파싱.</li>
-  <li><strong>viseme 재생</strong> — 하드코딩한 배열로 먼저 입이 움직이는지 본다.
+  <li><strong>viseme 재생</strong> — 서버가 주는 viseme 타임라인을 메타휴먼 얼굴 커브에 반영한다.
+  <code>USpeechQueue::GetPlaybackMs()</code>와 <code>GetCurrentFrame().Visemes</code>가 이미 준비돼 있다.
   <code>CTRL_expressions_jawOpen</code> 하나만으로 <code>AA</code>/<code>NN</code>/<code>KK</code>/<code>sil</code>
   4종이 동작하므로, 나머지 커브 이름을 다 찾기 전에 시작할 수 있다.</li>
-  <li><strong>전체 연결</strong> — 서버 프레임을 큐에 쌓고 순차 재생.</li>
+  <li><strong>첫 발화 지연</strong> — 목표는 3초인데 실측 6.7초다. 어느 단계가 먹는지 계측이 없다.</li>
 </ol>
 
 <p>그다음이 STT다. 마이크 입력을 텍스트로 바꿔 지금의 채팅 입력 자리에 넣으면 된다.
