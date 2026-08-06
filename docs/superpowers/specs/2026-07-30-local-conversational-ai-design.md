@@ -355,7 +355,32 @@ UE를 붙이기 전에 백엔드를 파이썬 스크립트만으로 완결시킨
 
 | # | 검증 | 상태 |
 |---|---|---|
-| A | 메타휴먼 얼굴 커브를 코드로 구동 | ✅ 완료 |
-| B | 하드코딩 viseme 배열 재생 + 보간 | 대기 |
+| A | 메타휴먼 얼굴 커브를 코드로 구동 | ✅ 완료 (에셋 유실, 재작성 필요) |
+| B | 하드코딩 viseme 배열 재생 + 보간 | 폐기 — D가 실제 프레임을 주므로 하드코딩 배열이 불필요해졌다 |
 | C | 런타임 wav 바이트 재생 (`USoundWaveProcedural`) | 대기 — **남은 최대 리스크** |
-| D | WebSocket 연결 + JSON 프레임 파싱 | 대기 |
+| D | WebSocket 연결 + JSON 프레임 파싱 | ✅ 완료 (2026-08-06) |
+
+### 스파이크 D 결과 (2026-08-06)
+
+`UConversationClient` (GameInstanceSubsystem)가 `Source/UE5_Client/`에 있다. PIE 콘솔에서
+`conv.Connect` / `conv.Say <문장>` / `conv.Disconnect`로 블루프린트 없이 돌릴 수 있다.
+`CheckFrame()`이 `scripts/ws_client.py`와 같은 계약을 검사해 위반 시 Error 로그를 남긴다.
+
+실측:
+
+| 항목 | 값 |
+|---|---|
+| speech 프레임 | seq 0, 1 → turn_end seq=2 |
+| WAV 크기 | 297,318 / 213,350 바이트 (base64로 ~285KB 메시지) |
+| 계약 위반 | 없음 |
+
+**오디오 절단 없음이 확인됐다.** 2418ms × 44100Hz × 2바이트 + 헤더 82 = 213,350으로 로그값과
+정확히 일치한다. 큰 메시지 때문에 오디오를 별도 프레임으로 쪼갤 필요는 없다.
+
+막혔던 지점 둘:
+
+- **`localhost`가 안 붙는다.** Windows는 `localhost`를 IPv6 `::1`로 먼저 푸는데 uvicorn은
+  IPv4 `127.0.0.1`에만 바인딩한다. 파이썬 `websockets`는 IPv4로 폴백하지만 UE는 안 한다.
+  기본 주소를 리터럴 IPv4로 박았다.
+- **콘솔 인자가 `ws:`로 잘린다.** `FConsoleManager::ProcessUserConsoleInput`이 `FParse::Token`으로
+  인자를 쪼개는데 `/`에서 끊는다. 따옴표로 감싸면 통째로 읽는다: `conv.Connect "ws://..."`.
