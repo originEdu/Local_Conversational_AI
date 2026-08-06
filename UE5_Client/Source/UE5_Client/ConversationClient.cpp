@@ -2,9 +2,13 @@
 
 #include "ConversationClient.h"
 
+#include "Audio.h"
+#include "Components/AudioComponent.h"
 #include "Dom/JsonObject.h"
 #include "IWebSocket.h"
+#include "Kismet/GameplayStatics.h"
 #include "Misc/Base64.h"
+#include "Sound/SoundWaveProcedural.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "WebSocketsModule.h"
@@ -34,6 +38,14 @@ void UConversationClient::Initialize(FSubsystemCollectionBase& Collection)
 		FConsoleCommandWithArgsDelegate::CreateWeakLambda(this, [this](const TArray<FString>& Args)
 		{
 			SendUserMessage(FString::Join(Args, TEXT(" ")));
+		})));
+
+	ConsoleCommands.Add(MakeUnique<FAutoConsoleCommand>(
+		TEXT("conv.Play"),
+		TEXT("마지막으로 받은 speech 프레임의 오디오를 재생한다."),
+		FConsoleCommandWithArgsDelegate::CreateWeakLambda(this, [this](const TArray<FString>&)
+		{
+			PlaySpeech(LastFrame);
 		})));
 
 	ConsoleCommands.Add(MakeUnique<FAutoConsoleCommand>(
@@ -119,6 +131,58 @@ bool UConversationClient::IsConnected() const
 	return Socket.IsValid() && Socket->IsConnected();
 }
 
+UAudioComponent* UConversationClient::PlaySpeech(const FSpeechFrame& Frame)
+{
+	if (Frame.AudioWav.Num() == 0)
+	{
+		UE_LOG(LogConversation, Error, TEXT("재생할 오디오가 없다 (seq=%d)"), Frame.Seq);
+		return nullptr;
+	}
+
+	// USoundWaveProcedural은 원시 PCM만 먹는다. 엔진 파서로 WAV 헤더를 벗긴다.
+	FWaveModInfo WaveInfo;
+	FString Reason;
+	if (!WaveInfo.ReadWaveInfo(Frame.AudioWav.GetData(), Frame.AudioWav.Num(), &Reason))
+	{
+		UE_LOG(LogConversation, Error, TEXT("WAV 헤더 파싱 실패 (%d바이트): %s"),
+			Frame.AudioWav.Num(), *Reason);
+		return nullptr;
+	}
+
+	const int32 SampleRate = static_cast<int32>(*WaveInfo.pSamplesPerSec);
+	const int32 NumChannels = static_cast<int32>(*WaveInfo.pChannels);
+	const int32 BitsPerSample = static_cast<int32>(*WaveInfo.pBitsPerSample);
+
+	if (BitsPerSample != 16)
+	{
+		UE_LOG(LogConversation, Error, TEXT("16비트 PCM만 재생한다. %d비트가 왔다."), BitsPerSample);
+		return nullptr;
+	}
+
+	const int32 BytesPerFrame = NumChannels * (BitsPerSample / 8);
+	const int32 NumFrames = WaveInfo.SampleDataSize / BytesPerFrame;
+
+	USoundWaveProcedural* Wave = NewObject<USoundWaveProcedural>();
+	Wave->SetSampleRate(SampleRate);
+	Wave->NumChannels = NumChannels;
+	Wave->Duration = static_cast<float>(NumFrames) / SampleRate;
+	Wave->SoundGroup = SOUNDGROUP_Voice;
+	Wave->bLooping = false;
+	Wave->QueueAudio(WaveInfo.SampleDataStart, WaveInfo.SampleDataSize);
+
+	UAudioComponent* Component = UGameplayStatics::SpawnSound2D(GetGameInstance(), Wave);
+	if (Component == nullptr)
+	{
+		UE_LOG(LogConversation, Error, TEXT("SpawnSound2D가 컴포넌트를 만들지 못했다"));
+		return nullptr;
+	}
+
+	UE_LOG(LogConversation, Log, TEXT("재생 seq=%d %dHz %d채널 %.3f초 (PCM %d바이트)"),
+		Frame.Seq, SampleRate, NumChannels, Wave->Duration, WaveInfo.SampleDataSize);
+
+	return Component;
+}
+
 void UConversationClient::HandleConnected()
 {
 	UE_LOG(LogConversation, Log, TEXT("연결됨"));
@@ -167,6 +231,7 @@ void UConversationClient::HandleMessage(const FString& Message)
 			Frame.Seq, Frame.AudioWav.Num(), Frame.Visemes.Num(), LastEnd, *Frame.Text);
 
 		CheckFrame(Frame);
+		LastFrame = Frame;
 		OnSpeech.Broadcast(Frame);
 		return;
 	}

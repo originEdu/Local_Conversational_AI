@@ -9,6 +9,7 @@
 
 class FJsonObject;
 class IWebSocket;
+class UAudioComponent;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogConversation, Log, All);
 
@@ -82,6 +83,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Conversation")
 	bool IsConnected() const;
 
+	/**
+	 * 프레임의 WAV 바이트를 그 자리에서 재생한다.
+	 *
+	 * 큐잉하지 않는다. 여러 번 부르면 소리가 겹친다. 순서 재생은 USpeechQueue가 맡는다.
+	 * 재생 위치를 알아야 viseme을 맞출 수 있으므로 AudioComponent를 돌려준다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Conversation")
+	UAudioComponent* PlaySpeech(const FSpeechFrame& Frame);
+
 	UPROPERTY(BlueprintAssignable, Category = "Conversation")
 	FOnSpeechFrame OnSpeech;
 
@@ -109,6 +119,9 @@ private:
 	TArray<TUniquePtr<FAutoConsoleCommand>> ConsoleCommands;
 
 	TSharedPtr<IWebSocket> Socket;
+
+	/** conv.Play가 재생할 대상. 마지막으로 받은 speech 프레임이다. */
+	FSpeechFrame LastFrame;
 
 	/** 다음에 와야 할 speech 프레임의 seq. 턴이 끝나면 0으로 돌아간다. */
 	int32 ExpectedSeq = 0;

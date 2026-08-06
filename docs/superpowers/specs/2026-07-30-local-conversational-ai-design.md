@@ -345,11 +345,12 @@ UE를 붙이기 전에 백엔드를 파이썬 스크립트만으로 완결시킨
 | 라이선스 | XTTS-v2는 CPML(비상업 전용) | 연구/데모 전용이므로 문제없음. 상업화 시 교체 필요 |
 | `gemma3n:e2b` 한국어 품질 | 유효 2B급 모델의 한국어 응답 자연스러움은 미검증 | 미달 시 동급 VRAM 내에서 다른 모델 검토 |
 | wav2vec2 한국어 모델 선정 | 어떤 체크포인트를 쓸지 미정 | 초기에 후보 1~2개 비교 |
-| **UE 런타임 오디오 재생** | UE는 런타임에 wav 바이트를 재생하는 기능을 기본 제공하지 않는다. `USoundWaveProcedural`로 직접 큐잉해야 한다 | 초기에 별도로 검증. 여기서 막히면 일정 전체가 밀린다 |
+| ~~UE 런타임 오디오 재생~~ | **해소됨 (2026-08-06).** `FWaveModInfo`로 헤더를 벗기고 `USoundWaveProcedural::QueueAudio`에 넣으면 재생된다 | 스파이크 C 참조 |
 | ~~메타휴먼 커브 구동 방식~~ | **해소됨 (2026-07-30).** `CTRL_expressions_jawOpen` 주입으로 턱이 움직이는 것을 확인 | 나머지 커브 이름만 추가 확인 필요 (6.3절 참조) |
 
-커브 구동이 확인되면서 UE 쪽 최대 불확실성은 사라졌다. 남은 UE 리스크는 런타임 오디오
-재생 하나다. 백엔드는 경로가 명확하므로, 다음 순서로 진행한다.
+2026-08-06 기준으로 UE 쪽 미검증 리스크는 없다. 커브 구동, WebSocket 프레임 수신, 런타임
+오디오 재생이 모두 확인됐다. 남은 일은 이것들을 조립하는 것이고, 조립은 리스크가 아니라
+분량의 문제다.
 
 ### 스파이크 진행 상황
 
@@ -357,7 +358,7 @@ UE를 붙이기 전에 백엔드를 파이썬 스크립트만으로 완결시킨
 |---|---|---|
 | A | 메타휴먼 얼굴 커브를 코드로 구동 | ✅ 완료 (에셋 유실, 재작성 필요) |
 | B | 하드코딩 viseme 배열 재생 + 보간 | 폐기 — D가 실제 프레임을 주므로 하드코딩 배열이 불필요해졌다 |
-| C | 런타임 wav 바이트 재생 (`USoundWaveProcedural`) | 대기 — **남은 최대 리스크** |
+| C | 런타임 wav 바이트 재생 (`USoundWaveProcedural`) | ✅ 완료 (2026-08-06) |
 | D | WebSocket 연결 + JSON 프레임 파싱 | ✅ 완료 (2026-08-06) |
 
 ### 스파이크 D 결과 (2026-08-06)
@@ -384,3 +385,24 @@ UE를 붙이기 전에 백엔드를 파이썬 스크립트만으로 완결시킨
   기본 주소를 리터럴 IPv4로 박았다.
 - **콘솔 인자가 `ws:`로 잘린다.** `FConsoleManager::ProcessUserConsoleInput`이 `FParse::Token`으로
   인자를 쪼개는데 `/`에서 끊는다. 따옴표로 감싸면 통째로 읽는다: `conv.Connect "ws://..."`.
+
+### 스파이크 C 결과 (2026-08-06)
+
+`UConversationClient::PlaySpeech`가 프레임의 WAV 바이트를 그대로 재생한다. 콘솔에서
+`conv.Play`로 마지막 프레임을 재생해 소리를 확인했다. 44100Hz 모노 2.4초가 끊김 없이 났다.
+
+WAV 파서는 직접 짜지 않았다. 엔진의 `FWaveModInfo::ReadWaveInfo`가 헤더를 읽고 PCM 시작
+포인터와 크기를 주므로, 그 값으로 `USoundWaveProcedural`을 채운다:
+
+```cpp
+Wave->SetSampleRate(SampleRate);
+Wave->NumChannels = NumChannels;
+Wave->Duration = (float)NumFrames / SampleRate;
+Wave->QueueAudio(WaveInfo.SampleDataStart, WaveInfo.SampleDataSize);
+UGameplayStatics::SpawnSound2D(GetGameInstance(), Wave);
+```
+
+새 모듈 의존성은 없다. 전부 `Engine`에 있다.
+
+큐잉은 넣지 않았다. `PlaySpeech`를 두 번 부르면 소리가 겹친다. 문장 순서 재생은
+`USpeechQueue`가 맡는다.
