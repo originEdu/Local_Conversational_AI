@@ -3,6 +3,8 @@
 #include "SpeechQueue.h"
 
 #include "Components/AudioComponent.h"
+#include "Engine/GameInstance.h"
+#include "TimerManager.h"
 
 void USpeechQueue::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -14,6 +16,7 @@ void USpeechQueue::Initialize(FSubsystemCollectionBase& Collection)
 	Client->OnSpeech.AddDynamic(this, &USpeechQueue::HandleSpeech);
 	Client->OnTurnEnd.AddDynamic(this, &USpeechQueue::HandleTurnEnd);
 	Client->OnServerError.AddDynamic(this, &USpeechQueue::HandleServerError);
+	Client->OnConnectionChanged.AddDynamic(this, &USpeechQueue::HandleConnectionChanged);
 }
 
 void USpeechQueue::Deinitialize()
@@ -46,6 +49,16 @@ void USpeechQueue::HandleServerError(const FString& Code, const FString& Message
 	UpdateBusy();
 }
 
+void USpeechQueue::HandleConnectionChanged(bool bConnected)
+{
+	// 끊기면 turn_end가 영영 안 온다. 비우지 않으면 bTurnPending이 참으로 남아 입력이
+	// 영구히 잠긴다.
+	if (!bConnected)
+	{
+		Clear();
+	}
+}
+
 void USpeechQueue::Enqueue(const FSpeechFrame& Frame)
 {
 	Pending.Add(Frame);
@@ -64,9 +77,10 @@ void USpeechQueue::Clear()
 {
 	Pending.Empty();
 
+	GetGameInstance()->GetTimerManager().ClearTimer(FinishTimer);
+
 	if (Current != nullptr)
 	{
-		Current->OnAudioFinished.RemoveAll(this);
 		Current->Stop();
 		Current = nullptr;
 	}
@@ -131,14 +145,20 @@ void USpeechQueue::PlayNext()
 	}
 
 	StartedAt = FPlatformTime::Seconds();
-	Current->OnAudioFinished.AddDynamic(this, &USpeechQueue::HandleAudioFinished);
+
+	// PlaySpeech가 샘플 수로 Duration을 정확히 채워 넣는다. 0이면 재생이 영영 안 끝난
+	// 것으로 보이므로 최소값을 준다.
+	const float Duration = FMath::Max(Current->Sound->GetDuration(), 0.01f);
+	GetGameInstance()->GetTimerManager().SetTimer(FinishTimer, this, &USpeechQueue::HandleAudioFinished, Duration, false);
+
 	UpdateBusy();
 	OnSentenceStarted.Broadcast(CurrentFrame);
 }
 
 void USpeechQueue::HandleAudioFinished()
 {
-	// SpawnSound2D가 만든 컴포넌트는 재생이 끝나면 스스로 파괴된다. 붙잡고 있으면 안 된다.
+	// procedural 웨이브는 데이터가 떨어져도 무음을 계속 낸다. 직접 멈춰야 한다.
+	Current->Stop();
 	Current = nullptr;
 	StartedAt = 0.0;
 

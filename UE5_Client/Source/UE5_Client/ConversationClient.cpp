@@ -5,12 +5,14 @@
 #include "Audio.h"
 #include "Components/AudioComponent.h"
 #include "Dom/JsonObject.h"
+#include "Engine/GameInstance.h"
 #include "IWebSocket.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/Base64.h"
 #include "Sound/SoundWaveProcedural.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
+#include "TimerManager.h"
 #include "WebSocketsModule.h"
 
 DEFINE_LOG_CATEGORY(LogConversation);
@@ -67,10 +69,14 @@ void UConversationClient::Deinitialize()
 void UConversationClient::Connect(const FString& Url)
 {
 	// 연결에 실패한 소켓도 핸들은 남는다. 살아 있든 아니든 먼저 정리한다.
+	// Disconnect가 재연결 의사를 지우므로 그 뒤에 다시 세운다.
 	if (Socket.IsValid())
 	{
 		Disconnect();
 	}
+
+	bWantConnected = true;
+	LastUrl = Url;
 
 	// 모듈이 아직 안 올라왔을 수 있다. CreateWebSocket 전에 보장한다.
 	FWebSocketsModule& Module = FModuleManager::LoadModuleChecked<FWebSocketsModule>(TEXT("WebSockets"));
@@ -78,6 +84,11 @@ void UConversationClient::Connect(const FString& Url)
 	UE_LOG(LogConversation, Log, TEXT("연결 시도: %s"), *Url);
 
 	Socket = Module.CreateWebSocket(Url, TEXT(""));
+
+	// 기본 상한이 1MB다. 오디오를 base64로 실어 보내므로 9초쯤 되는 문장이면 넘어서고,
+	// 넘으면 lws가 코드 1009로 연결을 끊는다. 44100Hz 16bit mono 기준 16MB는 약 2분치다.
+	Socket->SetTextMessageMemoryLimit(16 * 1024 * 1024);
+
 	Socket->OnConnected().AddUObject(this, &UConversationClient::HandleConnected);
 	Socket->OnConnectionError().AddUObject(this, &UConversationClient::HandleConnectionError);
 	Socket->OnClosed().AddUObject(this, &UConversationClient::HandleClosed);
@@ -87,6 +98,10 @@ void UConversationClient::Connect(const FString& Url)
 
 void UConversationClient::Disconnect()
 {
+	// 의도한 종료다. 아래 Close가 부르는 OnClosed가 재연결을 걸지 않게 먼저 지운다.
+	bWantConnected = false;
+	GetGameInstance()->GetTimerManager().ClearTimer(ReconnectTimer);
+
 	if (!Socket.IsValid())
 	{
 		return;
@@ -187,6 +202,7 @@ UAudioComponent* UConversationClient::PlaySpeech(const FSpeechFrame& Frame)
 void UConversationClient::HandleConnected()
 {
 	UE_LOG(LogConversation, Log, TEXT("연결됨"));
+	ReconnectDelay = 1.f;
 	OnConnectionChanged.Broadcast(true);
 }
 
@@ -194,12 +210,31 @@ void UConversationClient::HandleConnectionError(const FString& Error)
 {
 	UE_LOG(LogConversation, Error, TEXT("연결 실패: %s"), *Error);
 	OnConnectionChanged.Broadcast(false);
+	ScheduleReconnect();
 }
 
 void UConversationClient::HandleClosed(int32 StatusCode, const FString& Reason, bool bWasClean)
 {
 	UE_LOG(LogConversation, Log, TEXT("연결 종료: code=%d clean=%d %s"), StatusCode, bWasClean ? 1 : 0, *Reason);
 	OnConnectionChanged.Broadcast(false);
+	ScheduleReconnect();
+}
+
+void UConversationClient::ScheduleReconnect()
+{
+	if (!bWantConnected)
+	{
+		return;
+	}
+
+	UE_LOG(LogConversation, Log, TEXT("%.0f초 후 재연결한다"), ReconnectDelay);
+
+	GetGameInstance()->GetTimerManager().SetTimer(ReconnectTimer,
+		FTimerDelegate::CreateWeakLambda(this, [this]() { Connect(LastUrl); }),
+		ReconnectDelay, false);
+
+	// 서버가 죽어 있으면 1초마다 재시도해봐야 로그만 찬다. 15초까지 늘린다.
+	ReconnectDelay = FMath::Min(ReconnectDelay * 2.f, 15.f);
 }
 
 void UConversationClient::HandleMessage(const FString& Message)

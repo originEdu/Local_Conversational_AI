@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/TimerHandle.h"
 #include "HAL/IConsoleManager.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "ConversationClient.generated.h"
@@ -117,6 +118,9 @@ private:
 
 	bool ParseSpeechFrame(const TSharedRef<FJsonObject>& Root, FSpeechFrame& OutFrame) const;
 
+	/** 끊긴 뒤 다시 붙는다. Disconnect로 끊은 경우에는 아무것도 하지 않는다. */
+	void ScheduleReconnect();
+
 	/** 스파이크 검증용. 계약 위반을 Error 로그로 남긴다. */
 	void CheckFrame(const FSpeechFrame& Frame);
 
@@ -130,4 +134,19 @@ private:
 
 	/** 다음에 와야 할 speech 프레임의 seq. 턴이 끝나면 0으로 돌아간다. */
 	int32 ExpectedSeq = 0;
+
+	/**
+	 * Connect를 불렀고 아직 Disconnect하지 않았다.
+	 *
+	 * 의도한 종료와 사고를 구분한다. 이게 거짓이면 재연결하지 않는다.
+	 */
+	bool bWantConnected = false;
+
+	/** 재연결에 쓸 주소. */
+	FString LastUrl;
+
+	FTimerHandle ReconnectTimer;
+
+	/** 다음 재시도까지 기다릴 초. 실패할 때마다 두 배가 되고 연결되면 1초로 돌아간다. */
+	float ReconnectDelay = 1.f;
 };

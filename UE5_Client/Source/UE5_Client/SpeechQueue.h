@@ -4,6 +4,7 @@
 
 #include "ConversationClient.h"
 #include "CoreMinimal.h"
+#include "Engine/TimerHandle.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "SpeechQueue.generated.h"
 
@@ -78,6 +79,15 @@ private:
 	void HandleServerError(const FString& Code, const FString& Message);
 
 	UFUNCTION()
+	void HandleConnectionChanged(bool bConnected);
+
+	/**
+	 * 문장 재생이 끝났다고 보는 시점. 타이머가 부른다.
+	 *
+	 * UAudioComponent::OnAudioFinished는 USoundWaveProcedural에서 발화하지 않는다.
+	 * 소스가 끝을 알리는 대신 데이터가 떨어지면 무음을 계속 만들어낸다. 그래서 재생
+	 * 길이만큼 타이머를 걸고 직접 멈춘다.
+	 */
 	void HandleAudioFinished();
 
 	void PlayNext();
@@ -93,6 +103,9 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UAudioComponent> Current;
+
+	/** 현재 문장이 끝나는 시각에 맞춰 걸어둔 타이머. */
+	FTimerHandle FinishTimer;
 
 	TArray<FSpeechFrame> Pending;
 	FSpeechFrame CurrentFrame;

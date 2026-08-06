@@ -9,6 +9,7 @@
 
 class UButton;
 class UEditableTextBox;
+class UScrollBox;
 class UTextBlock;
 
 /**
@@ -36,8 +37,24 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UButton> SendButton;
 
+	/** 대화 로그. 말풍선은 여기에 런타임으로 붙는다. 안을 비워둬라. */
 	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UTextBlock> SubtitleText;
+	TObjectPtr<UScrollBox> ChatScroll;
+
+	UPROPERTY(EditAnywhere, Category = "Conversation")
+	FLinearColor UserBubbleColor = FLinearColor(0.13f, 0.32f, 0.55f);
+
+	UPROPERTY(EditAnywhere, Category = "Conversation")
+	FLinearColor AiBubbleColor = FLinearColor(0.16f, 0.16f, 0.18f);
+
+	/**
+	 * 말풍선 최대 너비(픽셀).
+	 *
+	 * 좌/우 정렬이면 말풍선이 내용 크기를 따라간다. 이 값이 없으면 긴 문장이 줄바꿈 없이
+	 * 화면 밖까지 늘어난다.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Conversation")
+	float BubbleWidth = 420.f;
 
 private:
 	UFUNCTION()
@@ -60,6 +77,23 @@ private:
 
 	void Send();
 
-	/** 연결됐고 AI가 말하는 중이 아닐 때만 입력을 받는다. */
-	void RefreshInputEnabled();
+	/**
+	 * 말풍선 하나를 만들어 로그 끝에 붙이고 맨 아래로 스크롤한다.
+	 *
+	 * 사용자는 오른쪽, AI는 왼쪽에 붙는다. 안의 UTextBlock을 돌려준다 — 같은 답변의
+	 * 다음 문장을 이어 붙일 때 쓴다.
+	 *
+	 * 말풍선마다 위젯 두 개를 만든다. 수천 개가 쌓이면 느려지므로 그때 UListView로
+	 * 바꾼다. 지금 대화 길이로는 문제가 안 된다.
+	 */
+	UTextBlock* AppendBubble(const FString& Text, bool bFromUser);
+
+	/** 연결됐고 AI가 말하는 중이 아니어야 보낼 수 있다. 타이핑은 언제든 된다. */
+	bool CanSend() const;
+
+	void RefreshSendEnabled();
+
+	/** 마지막 AI 말풍선의 텍스트. 같은 턴의 뒷문장을 여기에 이어 붙인다. */
+	UPROPERTY()
+	TObjectPtr<UTextBlock> LastAiLabel;
 };
