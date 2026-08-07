@@ -4,7 +4,7 @@
 
 #include "Components/Border.h"
 #include "Components/Button.h"
-#include "Components/EditableTextBox.h"
+#include "Components/MultiLineEditableTextBox.h"
 #include "Components/ScrollBox.h"
 #include "Components/ScrollBoxSlot.h"
 #include "Components/TextBlock.h"
@@ -19,7 +19,6 @@ void UConversationWidget::NativeConstruct()
 	USpeechQueue* Queue = GetGameInstance()->GetSubsystem<USpeechQueue>();
 
 	SendButton->OnClicked.AddDynamic(this, &UConversationWidget::HandleSendClicked);
-	InputBox->OnTextCommitted.AddDynamic(this, &UConversationWidget::HandleTextCommitted);
 
 	Client->OnConnectionChanged.AddDynamic(this, &UConversationWidget::HandleConnectionChanged);
 	Client->OnServerError.AddDynamic(this, &UConversationWidget::HandleServerError);
@@ -60,13 +59,16 @@ void UConversationWidget::HandleSendClicked()
 	Send();
 }
 
-void UConversationWidget::HandleTextCommitted(const FText& Text, ETextCommit::Type CommitMethod)
+FReply UConversationWidget::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
-	// 포커스가 빠질 때도 불린다. 엔터로 친 것만 보낸다.
-	if (CommitMethod == ETextCommit::OnEnter)
+	if (InKeyEvent.GetKey() == EKeys::Enter && !InKeyEvent.IsShiftDown())
 	{
 		Send();
+		return FReply::Handled();
 	}
+
+	// Shift+엔터는 그냥 흘려보낸다. 텍스트 박스가 줄바꿈으로 처리한다.
+	return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
 }
 
 void UConversationWidget::Send()
@@ -87,6 +89,9 @@ void UConversationWidget::Send()
 
 	GetGameInstance()->GetSubsystem<UConversationClient>()->SendUserMessage(Text);
 	InputBox->SetText(FText::GetEmpty());
+
+	// 버튼을 클릭했으면 포커스가 버튼으로 넘어가 있다. 바로 다음 문장을 칠 수 있게 되돌린다.
+	InputBox->SetKeyboardFocus();
 }
 
 UTextBlock* UConversationWidget::AppendBubble(const FString& Text, bool bFromUser)

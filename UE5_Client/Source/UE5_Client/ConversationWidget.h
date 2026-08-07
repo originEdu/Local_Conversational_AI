@@ -8,7 +8,7 @@
 #include "ConversationWidget.generated.h"
 
 class UButton;
-class UEditableTextBox;
+class UMultiLineEditableTextBox;
 class UScrollBox;
 class UTextBlock;
 
@@ -30,9 +30,18 @@ public:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 
+	/**
+	 * 엔터로 보내고 Shift+엔터로 줄을 바꾼다.
+	 *
+	 * Slate의 SMultiLineEditableText는 ModiferKeyForNewLine으로 이걸 지원하지만 UMG가
+	 * 그 값을 노출하지 않는다. 프리뷰 키 이벤트는 루트에서 포커스된 위젯 쪽으로 내려오므로
+	 * 텍스트 박스가 엔터를 먹기 전에 여기서 가로챌 수 있다.
+	 */
+	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
+
 protected:
 	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UEditableTextBox> InputBox;
+	TObjectPtr<UMultiLineEditableTextBox> InputBox;
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UButton> SendButton;
@@ -59,9 +68,6 @@ protected:
 private:
 	UFUNCTION()
 	void HandleSendClicked();
-
-	UFUNCTION()
-	void HandleTextCommitted(const FText& Text, ETextCommit::Type CommitMethod);
 
 	UFUNCTION()
 	void HandleConnectionChanged(bool bConnected);
