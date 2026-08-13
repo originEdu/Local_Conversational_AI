@@ -5,23 +5,27 @@
 """
 
 import asyncio
+import base64
+import binascii
 import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from app.session import Session
+from app.stt import STTError
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 _engine = None
 _aligner = None
+_stt = None
 
 
 def _load_models() -> None:
-    """엔진과 정렬기를 프로세스 수명 동안 한 번만 만든다."""
-    global _engine, _aligner
+    """엔진과 정렬기와 인식기를 프로세스 수명 동안 한 번만 만든다."""
+    global _engine, _aligner, _stt
 
     if _engine is None:
         from app.tts import create_engine
@@ -31,6 +35,10 @@ def _load_models() -> None:
         from app.align import CtcAligner
 
         _aligner = CtcAligner()
+    if _stt is None:
+        from app.stt import WhisperEngine
+
+        _stt = WhisperEngine()
 
 
 @asynccontextmanager
@@ -54,6 +62,45 @@ def build_session() -> Session:
     return Session(_engine, _aligner)
 
 
+def build_stt():
+    _load_models()
+    return _stt
+
+
+async def _transcribe(websocket: WebSocket, message: dict) -> None:
+    """audio_message를 받아 적어 transcript 프레임으로 돌려준다.
+
+    턴은 돌리지 않는다. 클라이언트가 이 글자를 입력란에 채워 넣고, 사용자가 고친 뒤
+    직접 보낸다. 잘못 알아들은 문장이 그대로 LLM에 가는 것보다 낫다.
+
+    아무 말도 없었으면 빈 문자열을 보낸다. 클라이언트가 "못 알아들었다"를 구분해야
+    녹음 상태를 풀 수 있다.
+    """
+    try:
+        wav = base64.b64decode(message.get("audioBase64", ""), validate=True)
+    except (binascii.Error, ValueError):
+        await websocket.send_json(
+            {
+                "type": "error",
+                "code": "BAD_REQUEST",
+                "message": "audioBase64를 디코딩할 수 없다",
+            }
+        )
+        return
+
+    try:
+        text = await asyncio.to_thread(build_stt().transcribe, wav)
+    except STTError as error:
+        logger.exception("음성 인식 실패")
+        await websocket.send_json(
+            {"type": "error", "code": "STT_FAILED", "message": str(error)}
+        )
+        return
+
+    logger.info("받아적음 (%d바이트): %s", len(wav), text)
+    await websocket.send_json({"type": "transcript", "text": text})
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket) -> None:
     await websocket.accept()
@@ -62,8 +109,13 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     try:
         while True:
             message = await websocket.receive_json()
+            kind = message.get("type")
 
-            if message.get("type") != "user_message" or not message.get("text"):
+            if kind == "audio_message":
+                await _transcribe(websocket, message)
+                continue
+
+            if kind != "user_message" or not message.get("text"):
                 await websocket.send_json(
                     {
                         "type": "error",

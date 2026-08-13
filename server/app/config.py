@@ -16,6 +16,11 @@ class Settings:
     aligner_model: str = os.getenv(
         "ALIGNER_MODEL", "kresnik/wav2vec2-large-xlsr-korean"
     )
+    stt_model: str = os.getenv("STT_MODEL", "large-v3-turbo")
+    stt_device: str = os.getenv("STT_DEVICE", "cuda")
+    # int8_float16은 VRAM을 절반 가까이 줄이면서 한국어 정확도 차이가 거의 없다.
+    # CPU로 돌릴 거면 "int8"로 바꿔야 한다.
+    stt_compute_type: str = os.getenv("STT_COMPUTE_TYPE", "int8_float16")
     history_char_limit: int = int(os.getenv("HISTORY_CHAR_LIMIT", "6000"))
     system_prompt: str = os.getenv(
         "SYSTEM_PROMPT",

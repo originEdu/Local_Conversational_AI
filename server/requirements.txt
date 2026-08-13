@@ -21,6 +21,9 @@ torchaudio==2.5.1
 coqui-tts==0.25.1
 hangul_romanize==0.1.0
 
+# STT. CTranslate2 런타임이라 transformers 핀 충돌과 무관하다.
+faster-whisper==1.2.1
+
 # MeloTTS 런타임 의존성.
 # MeloTTS 본체는 이 파일로 설치되지 않는다. 아래 명령을 따로 실행한다.
 #
