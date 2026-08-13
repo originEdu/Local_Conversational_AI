@@ -51,6 +51,7 @@ struct FSpeechFrame
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnTurnStarted);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnTranscript, const FString&, Text);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSpeechFrame, const FSpeechFrame&, Frame);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnTurnEnd, int32, Seq);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnServerError, const FString&, Code, const FString&, Message);
@@ -82,6 +83,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Conversation")
 	void SendUserMessage(const FString& Text);
 
+	/**
+	 * 녹음한 WAV를 보내 받아적기를 요청한다. 답은 OnTranscript로 온다.
+	 *
+	 * 턴을 시작하지 않는다. 받아적은 글자는 입력란에 들어가고, 보낼지는 사용자가 정한다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Conversation")
+	void SendAudio(const TArray<uint8>& Wav);
+
 	UFUNCTION(BlueprintPure, Category = "Conversation")
 	bool IsConnected() const;
 
@@ -97,6 +106,10 @@ public:
 	/** user_message를 실제로 보낸 직후. 여기서 turn_end까지가 서버 응답 대기 구간이다. */
 	UPROPERTY(BlueprintAssignable, Category = "Conversation")
 	FOnTurnStarted OnTurnStarted;
+
+	/** 서버가 받아적은 결과. 아무 말도 못 알아들었으면 비어 있다. */
+	UPROPERTY(BlueprintAssignable, Category = "Conversation")
+	FOnTranscript OnTranscript;
 
 	UPROPERTY(BlueprintAssignable, Category = "Conversation")
 	FOnSpeechFrame OnSpeech;

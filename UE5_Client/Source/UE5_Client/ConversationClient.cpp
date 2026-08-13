@@ -142,6 +142,32 @@ void UConversationClient::SendUserMessage(const FString& Text)
 	OnTurnStarted.Broadcast();
 }
 
+void UConversationClient::SendAudio(const TArray<uint8>& Wav)
+{
+	if (!IsConnected())
+	{
+		UE_LOG(LogConversation, Error, TEXT("연결되지 않았다. 오디오를 보내지 않는다."));
+		return;
+	}
+
+	if (Wav.Num() == 0)
+	{
+		UE_LOG(LogConversation, Error, TEXT("보낼 오디오가 비어 있다"));
+		return;
+	}
+
+	const TSharedRef<FJsonObject> Payload = MakeShared<FJsonObject>();
+	Payload->SetStringField(TEXT("type"), TEXT("audio_message"));
+	Payload->SetStringField(TEXT("audioBase64"), FBase64::Encode(Wav));
+
+	FString Serialized;
+	const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Serialized);
+	FJsonSerializer::Serialize(Payload, Writer);
+
+	UE_LOG(LogConversation, Log, TEXT("오디오 전송 %d바이트"), Wav.Num());
+	Socket->Send(Serialized);
+}
+
 bool UConversationClient::IsConnected() const
 {
 	return Socket.IsValid() && Socket->IsConnected();
@@ -233,8 +259,11 @@ void UConversationClient::ScheduleReconnect()
 		FTimerDelegate::CreateWeakLambda(this, [this]() { Connect(LastUrl); }),
 		ReconnectDelay, false);
 
-	// 서버가 죽어 있으면 1초마다 재시도해봐야 로그만 찬다. 15초까지 늘린다.
-	ReconnectDelay = FMath::Min(ReconnectDelay * 2.f, 15.f);
+	// 서버가 죽어 있으면 1초마다 재시도해봐야 로그만 찬다. 다만 상한이 크면 서버가
+	// 살아난 뒤에도 그만큼 더 기다린다. 서버 기동에 모델 로딩까지 2분쯤 걸리는데
+	// 그동안 PIE를 켜두면 간격이 상한까지 벌어져 첫 대화가 통째로 밀린다.
+	// 상대는 로컬호스트다. 자주 두드려도 비싸지 않다.
+	ReconnectDelay = FMath::Min(ReconnectDelay * 2.f, 5.f);
 }
 
 void UConversationClient::HandleMessage(const FString& Message)
@@ -269,6 +298,15 @@ void UConversationClient::HandleMessage(const FString& Message)
 		CheckFrame(Frame);
 		LastFrame = Frame;
 		OnSpeech.Broadcast(Frame);
+		return;
+	}
+
+	if (Type == TEXT("transcript"))
+	{
+		FString Text;
+		Root->TryGetStringField(TEXT("text"), Text);
+		UE_LOG(LogConversation, Log, TEXT("받아적음: \"%s\""), *Text);
+		OnTranscript.Broadcast(Text);
 		return;
 	}
 

@@ -10,7 +10,9 @@ public class UE5_Client : ModuleRules
 	
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput" });
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "WebSockets", "Json", "UMG", "Slate", "SlateCore" });
+		// AudioCapture는 플러그인 모듈이다. 여기 없으면 WASAPI 구현이 등록되지 않아
+		// Audio::FAudioCapture가 스트림을 열지 못한다.
+		PrivateDependencyModuleNames.AddRange(new string[] { "WebSockets", "Json", "UMG", "Slate", "SlateCore", "AudioCapture", "AudioCaptureCore" });
 
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
