@@ -12,10 +12,14 @@ namespace
 	 *
 	 * 마이크 감도와 방 소음에 따라 달라진다. 말해도 안 끊기면 낮추고, 가만히 있는데
 	 * 안 끝나면 올린다. 콜백 한 블록(약 20ms)의 RMS와 비교한다.
+	 *
+	 * 처음 0.02였는데 실측해 보니 너무 높았다. WASAPI 48kHz 마이크에서 조용할 때
+	 * 0.0006, 말할 때 0.5초 최대가 0.008~0.012였다. 말이 통째로 무음으로 잡혀
+	 * 자동 전송이 영영 안 걸렸다. 잡음 바닥의 8배쯤인 0.005로 내린다.
 	 */
 	TAutoConsoleVariable<float> CVarSpeechLevel(
 		TEXT("conv.SpeechLevel"),
-		0.02f,
+		0.005f,
 		TEXT("말로 판정할 최소 진폭(RMS). 0~1."));
 
 	/**
@@ -25,7 +29,7 @@ namespace
 	 */
 	TAutoConsoleVariable<int32> CVarSilenceMs(
 		TEXT("conv.SilenceMs"),
-		800,
+		2000,
 		TEXT("말이 끝났다고 볼 무음 길이(밀리초)."));
 
 	/**

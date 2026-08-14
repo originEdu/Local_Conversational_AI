@@ -47,11 +47,6 @@ void UConversationWidget::NativeConstruct()
 
 void UConversationWidget::NativeDestruct()
 {
-	if (UWorld* World = GetWorld())
-	{
-		World->GetTimerManager().ClearTimer(SendTimer);
-	}
-
 	// 서브시스템은 위젯보다 오래 산다. 안 끊으면 죽은 위젯으로 델리게이트가 날아온다.
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
@@ -147,7 +142,6 @@ void UConversationWidget::StartVoiceMode()
 
 	bVoiceMode = true;
 	bSendOnTranscript = false;
-	bPendingSend = false;
 	PendingAudio = 0;
 	PartialTimer = 0.f;
 	TextBeforeRecording = InputBox->GetText().ToString().TrimStartAndEnd();
@@ -163,6 +157,10 @@ void UConversationWidget::FinishRealtimeTurn()
 	GetGameInstance()->GetSubsystem<UConversationClient>()->SendAudio(
 		GetGameInstance()->GetSubsystem<UMicRecorder>()->Stop());
 	ShowMicOpen(false);
+
+	// 마이크는 이미 닫혔다. 다음 프레임을 기다리지 말고 그 자리에서 "변환 중"으로
+	// 바꾼다. 푸시 투 토크와 같다.
+	RefreshModeLabel();
 }
 
 void UConversationWidget::FinishPushToTalk()
@@ -201,6 +199,12 @@ void UConversationWidget::RefreshModeLabel()
 	{
 		Status = TEXT("텍스트로 변환 중...");
 	}
+	else if (GetGameInstance()->GetSubsystem<USpeechQueue>()->IsBusy())
+	{
+		// 이 동안 마이크가 닫혀 있다. 왜 안 들어가는지 알려주지 않으면 사용자는
+		// 닫힌 마이크에 대고 말한다.
+		Status = TEXT("AI 말하는 중 — 마이크 꺼짐");
+	}
 	else
 	{
 		Status = Mode == EConversationMode::Realtime
@@ -220,14 +224,11 @@ void UConversationWidget::StopVoiceMode()
 {
 	bVoiceMode = false;
 	bSendOnTranscript = false;
-	bPendingSend = false;
 	TextBeforeRecording.Reset();
 
 	// 답이 영영 안 오는 요청을 세고 있으면 다음 음성 모드에서 중간 결과가 아예 안 나간다.
 	// 연결이 끊겨 여기로 온 경우가 그렇다.
 	PendingAudio = 0;
-
-	GetWorld()->GetTimerManager().ClearTimer(SendTimer);
 
 	MicButton->SetBackgroundColor(FLinearColor::White);
 	InputBox->SetHintText(FText::GetEmpty());
@@ -260,9 +261,9 @@ void UConversationWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaT
 		return;
 	}
 
-	// 방금 한 말을 받아적는 중이거나 화면에 띄워둔 채 보내기를 기다리는 중이다.
-	// 이 사이에 마이크를 다시 열면 곧 닫힐 창에 대고 말하게 된다.
-	if (bSendOnTranscript || bPendingSend)
+	// 방금 한 말을 받아적는 중이다. 이 사이에 마이크를 다시 열면 곧 닫힐 창에
+	// 대고 말하게 된다.
+	if (bSendOnTranscript)
 	{
 		return;
 	}
@@ -359,6 +360,14 @@ void UConversationWidget::HandleTranscript(const FString& Text)
 	{
 		return;
 	}
+
+	// 아직 답이 안 온 요청이 남아 있으면 이건 마지막 녹음의 받아적기가 아니다.
+	// 말을 끊은 시점에 중간 결과가 날아가 있었고 그게 먼저 도착한 것이다. 여기서
+	// 보내면 말을 하다 만 문장이 LLM으로 간다. 마지막 것까지 기다린다.
+	if (PendingAudio > 0)
+	{
+		return;
+	}
 	bSendOnTranscript = false;
 
 	if (Text.IsEmpty())
@@ -368,17 +377,11 @@ void UConversationWidget::HandleTranscript(const FString& Text)
 		return;
 	}
 
-	// 여기서 바로 Send를 부르면 같은 프레임에 입력란이 비워진다. 방금 넣은 글자는
-	// 한 번도 그려지지 않고 사라진다. 한 박자 뒤에 보낸다.
-	bPendingSend = true;
-	GetWorld()->GetTimerManager().SetTimer(SendTimer,
-		FTimerDelegate::CreateWeakLambda(this, [this]()
-		{
-			bPendingSend = false;
-			Send();
-			TextBeforeRecording.Reset();
-		}),
-		SendDelay, false);
+	// 바로 보낸다. 입력란에 넣은 글자는 같은 프레임에 지워져 화면에 뜬 적이 없게
+	// 되지만, Send가 대화창에 말풍선으로 남기므로 사용자는 그걸로 확인한다.
+	// 말이 끝나면 곧바로 나가는 게 실시간 모드의 뜻이다.
+	Send();
+	TextBeforeRecording.Reset();
 }
 
 FReply UConversationWidget::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
@@ -478,7 +481,13 @@ void UConversationWidget::HandleServerError(const FString& Code, const FString& 
 
 	// 오류로 끝난 요청은 받아적기를 돌려주지 않는다. 안 풀면 음성 모드가 멈춘다.
 	PendingAudio = FMath::Max(0, PendingAudio - 1);
-	bSendOnTranscript = false;
+
+	// 실패한 게 중간 결과였다면 마지막 녹음은 아직 오는 중이다. 여기서 접으면
+	// 다 말한 문장이 통째로 버려진다.
+	if (PendingAudio == 0)
+	{
+		bSendOnTranscript = false;
+	}
 }
 
 bool UConversationWidget::CanSend() const

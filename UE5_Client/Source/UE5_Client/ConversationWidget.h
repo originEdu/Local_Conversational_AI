@@ -137,15 +137,6 @@ protected:
 	float PartialInterval = 1.f;
 
 	/**
-	 * 받아적은 글자를 보여주고 나서 보내기까지 기다리는 시간(초).
-	 *
-	 * 0이면 글자를 넣은 그 프레임에 입력란이 비워져 화면에 뜬 적이 없게 된다.
-	 * 사용자가 뭐라고 인식됐는지 읽을 만큼은 줘야 한다.
-	 */
-	UPROPERTY(EditAnywhere, Category = "Conversation")
-	float SendDelay = 0.7f;
-
-	/**
 	 * 한 발화의 최대 길이(초). 넘으면 거기서 끊는다.
 	 *
 	 * 실시간 모드는 무음이 끊어주지만 쉬지 않고 말하면 안 끊긴다. 푸시 투 토크는
@@ -275,12 +266,7 @@ private:
 	 */
 	int32 PendingAudio = 0;
 
-	/** 받아적은 글자를 띄워둔 채 SendDelay를 세는 중. 그동안 마이크를 다시 열지 않는다. */
-	bool bPendingSend = false;
-
 	float PartialTimer = 0.f;
-
-	FTimerHandle SendTimer;
 
 	/**
 	 * 녹음을 시작할 때 InputBox에 있던 글자.

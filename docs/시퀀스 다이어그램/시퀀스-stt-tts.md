@@ -138,7 +138,7 @@ sequenceDiagram
     SV-->>W: transcript (최종)
 
     alt 실시간 대화 모드
-        W->>W: SendDelay만큼 띄운 뒤 user_message로 전송
+        W->>W: 곧바로 user_message로 전송
     else 푸시 투 토크 모드
         W->>W: 입력란에 남긴다. 사용자가 엔터를 칠 때까지 안 보낸다
     end
