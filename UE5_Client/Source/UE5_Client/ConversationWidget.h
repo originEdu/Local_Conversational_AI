@@ -14,6 +14,21 @@ class UScrollBox;
 class UTextBlock;
 
 /**
+ * 음성 입력 방식.
+ *
+ * 마이크를 열고 실시간으로 받아적는 부분은 둘이 같다. 다른 건 언제 보내느냐다.
+ */
+UENUM(BlueprintType)
+enum class EConversationMode : uint8
+{
+	/** 말을 멈추면 알아서 보낸다. 엔터를 칠 필요가 없다. */
+	Realtime UMETA(DisplayName = "실시간 대화"),
+
+	/** 마이크 버튼을 다시 누를 때까지 녹음하고, 받아적은 글자는 입력란에 남긴다. */
+	PushToTalk UMETA(DisplayName = "푸시 투 토크"),
+};
+
+/**
  * 대화 UI의 C++ 베이스. 블루프린트에서 상속해 레이아웃만 만든다.
  *
  * 블루프린트에 아래 이름의 위젯이 반드시 있어야 한다. 없으면 컴파일이 실패한다.
@@ -63,6 +78,36 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UScrollBox> ChatScroll;
 
+	/**
+	 * 모드 선택 화면. 시작할 때 떠 있고 하나를 고르면 숨는다.
+	 *
+	 * 최상위 Overlay의 자식으로 두고 화면 전체를 덮어야 한다. 뒤쪽 입력이 그대로
+	 * 통하면 모드를 고르기 전에 대화가 시작된다.
+	 *
+	 * 타입이 UWidget인 건 Border든 VerticalBox든 받기 위해서다.
+	 */
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UWidget> ModePanel;
+
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UButton> RealtimeButton;
+
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UButton> PushToTalkButton;
+
+	/** 누르면 모드 선택 화면이 다시 뜬다. 대화 중에 바꿀 수 있어야 한다. */
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UButton> ModeButton;
+
+	/**
+	 * 지금 무슨 상태인지 한 줄로 보여준다.
+	 *
+	 * 녹음 중이면 "녹음 중", 녹음을 멈추고 받아적기를 기다리는 중이면 "변환 중",
+	 * 그 외에는 현재 모드 이름이 뜬다.
+	 */
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UTextBlock> ModeLabel;
+
 	UPROPERTY(EditAnywhere, Category = "Conversation")
 	FLinearColor UserBubbleColor = FLinearColor(0.13f, 0.32f, 0.55f);
 
@@ -101,6 +146,16 @@ protected:
 	float SendDelay = 0.7f;
 
 	/**
+	 * 한 발화의 최대 길이(초). 넘으면 거기서 끊는다.
+	 *
+	 * 실시간 모드는 무음이 끊어주지만 쉬지 않고 말하면 안 끊긴다. 푸시 투 토크는
+	 * 버튼을 다시 누르기 전까지 무한정 쌓인다. 중간 결과를 보낼 때마다 녹음 전체를
+	 * 다시 보내는 구조라 길어지면 전송량이 감당이 안 된다.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Conversation")
+	float MaxRecordSeconds = 60.f;
+
+	/**
 	 * 말풍선 최대 너비(픽셀).
 	 *
 	 * 좌/우 정렬이면 말풍선이 내용 크기를 따라간다. 이 값이 없으면 긴 문장이 줄바꿈 없이
@@ -115,6 +170,15 @@ private:
 
 	UFUNCTION()
 	void HandleMicClicked();
+
+	UFUNCTION()
+	void HandleRealtimeClicked();
+
+	UFUNCTION()
+	void HandlePushToTalkClicked();
+
+	UFUNCTION()
+	void HandleModeClicked();
 
 	UFUNCTION()
 	void HandleTranscript(const FString& Text);
@@ -133,11 +197,39 @@ private:
 
 	void Send();
 
+	/** 모드를 정하고 선택 화면을 숨긴다. 실시간이면 그 자리에서 음성 모드를 켠다. */
+	void SelectMode(EConversationMode NewMode);
+
+	/** 마이크를 열고 음성 모드를 켠다. 연결이 없으면 아무것도 하지 않는다. */
+	void StartVoiceMode();
+
 	/** 음성 모드를 끄고 마이크를 닫는다. 녹음 중이던 소리는 버린다. */
 	void StopVoiceMode();
 
+	/**
+	 * 실시간 모드에서 한 발화를 마감한다. 받아적기가 오는 대로 전송한다.
+	 *
+	 * 무음을 감지한 시점에는 아직 마지막 오디오가 서버에 안 갔다. 그래서 여기서
+	 * 바로 보내지 않고 bSendOnTranscript를 세워 받아적기 도착 시점으로 미룬다.
+	 */
+	void FinishRealtimeTurn();
+
+	/**
+	 * 푸시 투 토크에서 한 발화를 마감한다. 받아적어 입력란에 남기고 전송은 하지 않는다.
+	 *
+	 * 보낼지 말지는 사용자가 정한다. 그게 이 모드의 이유다.
+	 */
+	void FinishPushToTalk();
+
 	/** 마이크가 열렸는지를 버튼 색과 입력란 안내문으로 보여준다. */
 	void ShowMicOpen(bool bOpen);
+
+	/**
+	 * ModeLabel에 지금 뭘 하고 있는지 쓴다. 녹음 중 > 변환 중 > 모드 이름 순으로 우선한다.
+	 *
+	 * 매 프레임 불리므로 글자가 바뀔 때만 실제로 세운다.
+	 */
+	void RefreshModeLabel();
 
 	/**
 	 * 말풍선 하나를 만들어 로그 끝에 붙이고 맨 아래로 스크롤한다.
@@ -159,6 +251,8 @@ private:
 	UPROPERTY()
 	TObjectPtr<UTextBlock> LastAiLabel;
 
+	EConversationMode Mode = EConversationMode::Realtime;
+
 	/** 음성 모드가 켜져 있다. 마이크가 실제로 열려 있는지와는 다르다 — AI가 말하는 동안은 닫는다. */
 	bool bVoiceMode = false;
 
@@ -170,8 +264,16 @@ private:
 	 */
 	bool bSendOnTranscript = false;
 
-	/** 앞서 보낸 중간 결과의 답을 기다리는 중. 답이 오기 전에는 다음 것을 안 보낸다. */
-	bool bPartialInFlight = false;
+	/**
+	 * 보내놓고 아직 받아적기가 안 온 오디오 요청 수.
+	 *
+	 * 두 가지에 쓴다. 0이 아니면 다음 중간 결과를 보내지 않는다 — 인식이 느려지면
+	 * 간격이 알아서 벌어진다. 그리고 녹음이 끝난 뒤에도 0이 아니면 아직 변환 중이다.
+	 *
+	 * bool 하나로는 후자가 안 된다. 마지막 녹음을 보낼 때 앞서 보낸 중간 결과가 아직
+	 * 안 왔을 수 있고, 그 답이 먼저 도착하면 "변환 중" 표시가 일찍 꺼진다.
+	 */
+	int32 PendingAudio = 0;
 
 	/** 받아적은 글자를 띄워둔 채 SendDelay를 세는 중. 그동안 마이크를 다시 열지 않는다. */
 	bool bPendingSend = false;
@@ -187,4 +289,7 @@ private:
 	 * 사용자가 미리 쳐둔 글자를 지우지 않으려면 앞에 다시 붙여야 한다.
 	 */
 	FString TextBeforeRecording;
+
+	/** ModeLabel에 마지막으로 쓴 글자. 안 바뀌었으면 SetText를 건너뛴다. */
+	FString LastModeLabelText;
 };

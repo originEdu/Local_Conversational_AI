@@ -148,6 +148,12 @@ bool UMicRecorder::IsRecording() const
 	return Capture.IsCapturing();
 }
 
+float UMicRecorder::GetRecordedSeconds() const
+{
+	FScopeLock Lock(&SamplesLock);
+	return SampleRate > 0 ? Samples.Num() / static_cast<float>(SampleRate) : 0.f;
+}
+
 TArray<uint8> UMicRecorder::BuildWav() const
 {
 	if (Samples.Num() == 0)

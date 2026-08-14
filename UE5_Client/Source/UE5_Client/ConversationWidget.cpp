@@ -23,6 +23,12 @@ void UConversationWidget::NativeConstruct()
 
 	SendButton->OnClicked.AddDynamic(this, &UConversationWidget::HandleSendClicked);
 	MicButton->OnClicked.AddDynamic(this, &UConversationWidget::HandleMicClicked);
+	RealtimeButton->OnClicked.AddDynamic(this, &UConversationWidget::HandleRealtimeClicked);
+	PushToTalkButton->OnClicked.AddDynamic(this, &UConversationWidget::HandlePushToTalkClicked);
+	ModeButton->OnClicked.AddDynamic(this, &UConversationWidget::HandleModeClicked);
+
+	// 에디터에 어떻게 저장돼 있든 처음엔 떠 있어야 한다.
+	ModePanel->SetVisibility(ESlateVisibility::Visible);
 
 	Client->OnConnectionChanged.AddDynamic(this, &UConversationWidget::HandleConnectionChanged);
 	Client->OnServerError.AddDynamic(this, &UConversationWidget::HandleServerError);
@@ -79,10 +85,59 @@ void UConversationWidget::HandleMicClicked()
 {
 	if (bVoiceMode)
 	{
-		StopVoiceMode();
+		// 푸시 투 토크는 버튼을 다시 누르는 게 "말 다 했다"는 뜻이다. 마지막 녹음을
+		// 받아적어야 한다. 실시간 모드는 무음이 그 역할을 하므로 재누름은 취소다.
+		if (Mode == EConversationMode::PushToTalk)
+		{
+			FinishPushToTalk();
+		}
+		else
+		{
+			StopVoiceMode();
+		}
 		return;
 	}
 
+	StartVoiceMode();
+}
+
+void UConversationWidget::HandleRealtimeClicked()
+{
+	SelectMode(EConversationMode::Realtime);
+}
+
+void UConversationWidget::HandlePushToTalkClicked()
+{
+	SelectMode(EConversationMode::PushToTalk);
+}
+
+void UConversationWidget::HandleModeClicked()
+{
+	ModePanel->SetVisibility(ESlateVisibility::Visible);
+}
+
+void UConversationWidget::SelectMode(EConversationMode NewMode)
+{
+	// 두 모드는 마이크를 여닫는 규칙이 다르다. 켜진 채로 넘어가면 상태가 섞인다.
+	if (bVoiceMode)
+	{
+		StopVoiceMode();
+	}
+
+	Mode = NewMode;
+	ModePanel->SetVisibility(ESlateVisibility::Collapsed);
+	RefreshModeLabel();
+
+	// 실시간 모드는 고른 즉시 대화가 시작된다. 그게 이 모드의 뜻이다. 푸시 투 토크는
+	// 사용자가 마이크 버튼을 누를 때까지 기다린다.
+	if (Mode == EConversationMode::Realtime)
+	{
+		StartVoiceMode();
+	}
+}
+
+void UConversationWidget::StartVoiceMode()
+{
 	// 연결이 없으면 받아적을 곳이 없다. 녹음해봐야 버린다.
 	if (!GetGameInstance()->GetSubsystem<UConversationClient>()->IsConnected())
 	{
@@ -92,13 +147,73 @@ void UConversationWidget::HandleMicClicked()
 
 	bVoiceMode = true;
 	bSendOnTranscript = false;
-	bPartialInFlight = false;
 	bPendingSend = false;
+	PendingAudio = 0;
 	PartialTimer = 0.f;
 	TextBeforeRecording = InputBox->GetText().ToString().TrimStartAndEnd();
 
 	ShowMicOpen(true);
 	GetGameInstance()->GetSubsystem<UMicRecorder>()->Start();
+}
+
+void UConversationWidget::FinishRealtimeTurn()
+{
+	bSendOnTranscript = true;
+	++PendingAudio;
+	GetGameInstance()->GetSubsystem<UConversationClient>()->SendAudio(
+		GetGameInstance()->GetSubsystem<UMicRecorder>()->Stop());
+	ShowMicOpen(false);
+}
+
+void UConversationWidget::FinishPushToTalk()
+{
+	const TArray<uint8> Wav = GetGameInstance()->GetSubsystem<UMicRecorder>()->Stop();
+
+	bVoiceMode = false;
+	PartialTimer = 0.f;
+
+	MicButton->SetBackgroundColor(FLinearColor::White);
+	InputBox->SetHintText(FText::GetEmpty());
+
+	// bSendOnTranscript를 세우지 않는다. HandleTranscript가 입력란만 채우고 끝난다.
+	// TextBeforeRecording도 지우지 않는다 -- 마지막 받아적기가 아직 안 왔다.
+	if (Wav.Num() > 0)
+	{
+		++PendingAudio;
+		GetGameInstance()->GetSubsystem<UConversationClient>()->SendAudio(Wav);
+	}
+
+	// 마이크는 이미 닫혔고 PendingAudio가 남아 있다. 다음 프레임을 기다리지 말고
+	// 버튼을 누른 그 자리에서 "변환 중"으로 바뀌어야 한다.
+	RefreshModeLabel();
+}
+
+void UConversationWidget::RefreshModeLabel()
+{
+	const UMicRecorder* Recorder = GetGameInstance()->GetSubsystem<UMicRecorder>();
+
+	FString Status;
+	if (Recorder->IsRecording())
+	{
+		Status = TEXT("● 녹음 중");
+	}
+	else if (PendingAudio > 0)
+	{
+		Status = TEXT("텍스트로 변환 중...");
+	}
+	else
+	{
+		Status = Mode == EConversationMode::Realtime
+			? TEXT("실시간 대화")
+			: TEXT("푸시 투 토크");
+	}
+
+	if (Status == LastModeLabelText)
+	{
+		return;
+	}
+	LastModeLabelText = Status;
+	ModeLabel->SetText(FText::FromString(Status));
 }
 
 void UConversationWidget::StopVoiceMode()
@@ -107,6 +222,10 @@ void UConversationWidget::StopVoiceMode()
 	bSendOnTranscript = false;
 	bPendingSend = false;
 	TextBeforeRecording.Reset();
+
+	// 답이 영영 안 오는 요청을 세고 있으면 다음 음성 모드에서 중간 결과가 아예 안 나간다.
+	// 연결이 끊겨 여기로 온 경우가 그렇다.
+	PendingAudio = 0;
 
 	GetWorld()->GetTimerManager().ClearTimer(SendTimer);
 
@@ -131,6 +250,10 @@ void UConversationWidget::ShowMicOpen(bool bOpen)
 void UConversationWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	// 음성 모드가 꺼진 뒤에도 갱신해야 한다. 푸시 투 토크는 마지막 받아적기를
+	// 기다리는 동안 이미 bVoiceMode가 false다.
+	RefreshModeLabel();
 
 	if (!bVoiceMode)
 	{
@@ -170,18 +293,34 @@ void UConversationWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaT
 		return;
 	}
 
-	// 말이 끝났다. 마지막 오디오를 보내고, 받아적기가 오는 대로 전송한다.
-	if (Recorder->HasEndpointed())
+	// 한 발화가 너무 길어졌다. 실시간 모드는 쉬지 않고 말하면 무음이 안 오고, 푸시 투
+	// 토크는 버튼을 다시 누르기 전까지 계속 쌓인다. 중간 결과마다 녹음 전체를 다시
+	// 보내는 구조라 여기서 끊지 않으면 초당 전송량이 눌러앉는다.
+	if (Recorder->GetRecordedSeconds() >= MaxRecordSeconds)
 	{
-		bSendOnTranscript = true;
-		Client->SendAudio(Recorder->Stop());
-		ShowMicOpen(false);
+		UE_LOG(LogConversation, Warning, TEXT("발화가 %.0f초를 넘겨 여기서 끊는다"), MaxRecordSeconds);
+		if (Mode == EConversationMode::Realtime)
+		{
+			FinishRealtimeTurn();
+		}
+		else
+		{
+			FinishPushToTalk();
+		}
+		return;
+	}
+
+	// 말이 끝났다. 마지막 오디오를 보내고, 받아적기가 오는 대로 전송한다.
+	// 푸시 투 토크는 무음을 보지 않는다 -- 끝냈는지는 버튼이 정한다.
+	if (Mode == EConversationMode::Realtime && Recorder->HasEndpointed())
+	{
+		FinishRealtimeTurn();
 		return;
 	}
 
 	// 앞 요청이 아직 안 왔으면 기다린다. 인식이 느려지면 간격이 알아서 벌어진다.
 	// 아직 아무 소리도 안 났으면 정적을 받아적으러 보낼 이유가 없다.
-	if (bPartialInFlight || !Recorder->HasHeardSpeech())
+	if (PendingAudio > 0 || !Recorder->HasHeardSpeech())
 	{
 		return;
 	}
@@ -199,14 +338,15 @@ void UConversationWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaT
 	const TArray<uint8> Wav = Recorder->Snapshot();
 	if (Wav.Num() > 0)
 	{
-		bPartialInFlight = true;
+		++PendingAudio;
 		Client->SendAudio(Wav);
 	}
 }
 
 void UConversationWidget::HandleTranscript(const FString& Text)
 {
-	bPartialInFlight = false;
+	// StopVoiceMode가 0으로 되돌린 뒤에 옛 요청의 답이 도착할 수 있다.
+	PendingAudio = FMath::Max(0, PendingAudio - 1);
 
 	// 중간 결과는 매번 처음부터 다시 받아적은 전체 문장이다. 이어 붙이면 안 되고
 	// 갈아쳐야 한다.
@@ -337,7 +477,7 @@ void UConversationWidget::HandleServerError(const FString& Code, const FString& 
 	LastAiLabel = nullptr;
 
 	// 오류로 끝난 요청은 받아적기를 돌려주지 않는다. 안 풀면 음성 모드가 멈춘다.
-	bPartialInFlight = false;
+	PendingAudio = FMath::Max(0, PendingAudio - 1);
 	bSendOnTranscript = false;
 }
 

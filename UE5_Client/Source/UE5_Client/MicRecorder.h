@@ -55,6 +55,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Conversation")
 	bool IsRecording() const;
 
+	/** 지금까지 녹음된 길이(초). 한 발화가 너무 길어지지 않았는지 보려고 쓴다. */
+	UFUNCTION(BlueprintPure, Category = "Conversation")
+	float GetRecordedSeconds() const;
+
 	/**
 	 * 말을 하다가 조용해졌다. 이제 보내면 된다는 뜻이다.
 	 *
