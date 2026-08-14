@@ -102,7 +102,8 @@
   }
   .callout p:last-child { margin-bottom: 0; }
 
-  .steps { counter-reset: step; list-style: none; padding: 0; margin: 0; }
+  /* 음성 입력이 0단계다. 마이크를 안 쓰면 건너뛰는 단계라 1이 아니다. */
+  .steps { counter-reset: step -1; list-style: none; padding: 0; margin: 0; }
   .steps > li {
     counter-increment: step; position: relative;
     padding-left: 2.6rem; margin-bottom: 2rem;
@@ -135,9 +136,9 @@
 <header>
   <h1>Local Conversational AI — 동작 원리</h1>
   <p class="lede">
-    메타휴먼과 한국어로 대화하는 프로그램. 사용자가 텍스트를 입력하면 로컬 LLM이 답하고,
-    로컬 TTS가 음성을 만들고, 메타휴먼이 그 음성에 맞춰 입을 움직인다.
-    외부 API를 쓰지 않는다. 전부 한 대의 PC에서 돈다.
+    메타휴먼과 한국어로 대화하는 프로그램. 사용자가 <strong>말하거나</strong> 텍스트를
+    입력하면 로컬 LLM이 답하고, 로컬 TTS가 음성을 만들고, 메타휴먼이 그 음성에 맞춰
+    입을 움직인다. 외부 API를 쓰지 않는다. 전부 한 대의 PC에서 돈다.
   </p>
 </header>
 
@@ -145,25 +146,30 @@
 
 <pre><code>┌─ 클라이언트 (UE5) ────────────────────────────────────┐
 │  메타휴먼 · ARKit 입술 커브 · 자막 UI                  │
-│  WebSocket 클라이언트 / 오디오 큐 / viseme 재생기      │
-└────────▲─────────────────────────────│────────────────┘
-         │ {text, audioBase64,         │ {"type":"user_message",
-         │  visemes[]}                 │  "text":"오늘 뭐 했어?"}
-         │ 문장 단위 1프레임            ▼
-┌────────┴──────────────────────────────────────────────┐
+│  마이크 녹음 / WebSocket / 오디오 큐 / viseme 재생기   │
+└──▲────────▲─────────────────│──────────────│──────────┘
+   │        │                 │              │ {"type":"audio_message",
+   │        │ {text,          │ {"type":     │  "audioBase64":"UklGRi..."}
+   │        │  audioBase64,   │  "user_      │
+   │ {"type":│  visemes[]}    │  message",   │
+   │  "transcript",           │  "text":...} │
+   │  "text":"오늘 뭐 했어?"}  ▼              ▼
+┌──┴────────┴───────────────────────────────────────────┐
 │  서버 (FastAPI, 파이썬 단일 프로세스)                  │
 │                                                       │
 │  ┌ WebSocket 핸들러 ────────────────────────────┐     │
+│  │  audio_message → STT → transcript (무상태)    │     │
+│  │  user_message  → 아래 턴 파이프라인           │     │
 │  │  세션 히스토리 (메모리, 연결 = 세션)          │     │
 │  │  문장 경계 분할  ← 스트리밍의 심장             │     │
 │  │  프레임 조립 · 실패 폴백                      │     │
-│  └──┬───────────────────────────┬──────────────┘     │
-│     │ HTTP 스트림               │ 직접 함수 호출      │
-│     ▼                           ▼                     │
-│  (외부 프로세스)          TTS → 정렬 → viseme 매핑     │
-│                           MeloTTS   (GPU 0.9GB)       │
-│                           wav2vec2  (CPU)             │
-│                           매퍼      (순수 파이썬)      │
+│  └──┬───────────────┬───────────┬──────────────┘     │
+│     │ HTTP 스트림   │ 직접 호출 │ 직접 호출          │
+│     ▼               ▼           ▼                     │
+│  (외부 프로세스)  STT       TTS → 정렬 → viseme       │
+│                   faster-    MeloTTS   (GPU 0.9GB)    │
+│                   whisper    wav2vec2  (CPU)          │
+│                   (GPU 0.9GB) 매퍼     (순수 파이썬)   │
 └───────────────────────────────────────────────────────┘
          │
          ▼
@@ -179,12 +185,23 @@
 
 <h2><span class="num">2</span>한 번의 대화가 흐르는 순서</h2>
 
-<p>사용자가 <code>"오늘 뭐 했어?"</code>라고 입력했을 때 벌어지는 일이다.</p>
+<p>사용자가 <code>"오늘 뭐 했어?"</code>라고 말하거나 입력했을 때 벌어지는 일이다.</p>
 
 <ol class="steps">
 
 <li>
+<h3>(음성일 때) 말이 글자가 된다</h3>
+<p>마이크를 쓰면 그 앞에 한 단계가 붙는다. UE가 녹음한 WAV를 보내고 서버가 받아적어
+돌려준다. <strong>이건 턴이 아니다</strong> — 받아적기만 하고 LLM은 건드리지 않는다.</p>
+<pre><code>→ {"type": "audio_message", "audioBase64": "UklGRi..."}
+← {"type": "transcript", "text": "오늘 뭐 했어?"}</code></pre>
+<p>받아적은 글자는 입력란에 들어간다. 잘못 알아들은 문장이 그대로 LLM에 가는 것보다
+사용자가 한 번 보는 편이 낫다. 자세한 건 7장에 있다.</p>
+</li>
+
+<li>
 <h3>질문이 서버로</h3>
+<p>음성이든 타이핑이든 여기서부터는 똑같다.</p>
 <pre><code>{"type": "user_message", "text": "오늘 뭐 했어?"}</code></pre>
 </li>
 
@@ -319,8 +336,15 @@ HTTP 홉이 생긴다. 취미 프로젝트에서 그 비용을 치를 이유가 
 지배되므로 음절 단위로도 화면에서 차이가 거의 없다.</p>
 
 <h3>왜 정렬기를 CPU에 두나</h3>
-<p>GPU 8GB를 LLM(1.6GB)과 TTS(0.9GB)가 쓴다. 정렬기는 문장당 100~200ms면 충분해서
-GPU에 올릴 이유가 없다.</p>
+<p>GPU 8GB를 TTS(0.9GB)와 STT(0.9GB)가 쓰고, 같은 화면에 메타휴먼도 올라간다.
+정렬기는 문장당 100~200ms면 충분해서 GPU에 올릴 이유가 없다.
+(LLM 1.6GB는 원격으로 옮긴 뒤로 이 카드에서 빠졌다.)</p>
+
+<h3>왜 받아적기는 턴을 돌리지 않나</h3>
+<p>말한 걸 바로 LLM에 넣으면 잘못 알아들은 문장이 그대로 질문이 된다. 받아적기만
+돌려주고 보낼지는 사용자가 정한다.</p>
+<p>덕분에 서버의 STT 경로가 완전히 무상태가 된다. 연결마다 오디오 버퍼를 들고 있을
+필요가 없고, 실시간 갱신은 클라이언트가 전체를 다시 보내는 것으로 해결된다.</p>
 
 <h2><span class="num">4</span>고장 나도 대화는 계속된다</h2>
 
@@ -335,11 +359,17 @@ GPU에 올릴 이유가 없다.</p>
     <tr><td>LLM이 죽음</td><td><code>{"type":"error","code":"LLM_UNAVAILABLE"}</code>. 서버는 안 죽는다</td></tr>
     <tr><td>TTS 실패</td><td><code>audioBase64: null</code>, <code>visemes: []</code>. 자막만 나가고 입은 가만있다</td></tr>
     <tr><td>정렬 실패</td><td>오디오 길이를 음절 수로 균등 분배. 정확도는 떨어지지만 멈추지 않는다</td></tr>
-    <tr><td>연결 끊김</td><td>UE가 지수 백오프(1→15초 상한)로 계속 재연결. 재생 큐는 즉시 비운다. <strong>대화 기록은 초기화된다</strong> (연결 = 세션)</td></tr>
+    <tr><td>STT 실패</td><td><code>{"type":"error","code":"STT_FAILED"}</code>. 대화는 그대로 살아 있고 타이핑으로 계속할 수 있다</td></tr>
+    <tr><td>아무 말도 못 알아들음</td><td><code>{"type":"transcript","text":""}</code>. 빈 문자열도 답이다 — 이게 와야 클라이언트가 녹음 상태를 푼다</td></tr>
+    <tr><td>연결 끊김</td><td>UE가 지수 백오프(1→5초 상한)로 계속 재연결. 음성 모드는 풀리고 재생 큐는 즉시 비운다. <strong>대화 기록은 초기화된다</strong> (연결 = 세션)</td></tr>
     <tr><td>히스토리 초과</td><td>오래된 대화부터 버린다. system 프롬프트는 항상 유지</td></tr>
   </tbody>
 </table>
 </div>
+
+<p>백오프 상한이 5초인 건 서버 기동에 2분이 걸리기 때문이다. 그동안 PIE를 켜두면 간격이
+상한까지 벌어져, 서버가 살아난 뒤에도 그만큼 더 기다리게 된다. 상대는 로컬호스트라
+자주 두드려도 비싸지 않다.</p>
 
 <h2><span class="num">5</span>코드 구조</h2>
 
@@ -347,6 +377,7 @@ GPU에 올릴 이유가 없다.</p>
   main.py       FastAPI 앱, WebSocket 엔드포인트, 모델 사전 로딩
   session.py    대화 히스토리, 턴 오케스트레이션
   llm.py        LLM 스트리밍 호출 (Ollama / OpenAI 호환)
+  stt.py        faster-whisper 래퍼. WAV → 문장
   sentence.py   토큰 스트림을 문장으로 분할
   pipeline.py   speech 프레임 조립, 실패 폴백
   tts.py        TTS 프로토콜, MeloTTS·XTTS 구현체, WAV 인코딩
@@ -357,11 +388,27 @@ GPU에 올릴 이유가 없다.</p>
 
 <p>의존 방향은 한 방향이다.</p>
 
-<pre><code>main → session → pipeline → tts, align, viseme → hangul</code></pre>
+<pre><code>main → session → pipeline → tts, align, viseme → hangul
+     → stt</code></pre>
+
+<p><code>stt</code>는 턴 파이프라인에 끼지 않는다. <code>main</code>이 직접 부르고 결과를
+그대로 돌려준다. 받아적기는 대화 상태를 만들지 않기 때문이다.</p>
 
 <p><code>hangul</code>, <code>viseme</code>, <code>sentence</code>는
 <strong>아무것도 import하지 않는 순수 함수 모듈</strong>이다. 그래서 모델도 GPU도 없이
-테스트할 수 있다. 전체 단위 테스트 56개가 1초 안에 끝난다.</p>
+테스트할 수 있다. 전체 단위 테스트 70개가 2초 안에 끝난다.</p>
+
+<p>클라이언트도 같이 적어둔다.</p>
+
+<pre><code>UE5_Client/Source/UE5_Client/
+  ConversationClient   WebSocket 소유, 프레임 파싱, 재연결
+  MicRecorder          마이크 캡처, WAV 조립, 무음 감지
+  SpeechQueue          문장 오디오를 순서대로 재생, 재생 위치 제공
+  VisemeDriver         재생 위치 → 메타휴먼 얼굴 커브값
+  ConversationWidget   UI 상태 기계 (대화 모드, 마이크 개폐, 전송 시점)</code></pre>
+
+<p>넷 다 <code>UGameInstanceSubsystem</code>이거나 컴포넌트다. 위젯이 사라져도 대화
+세션은 살아 있다.</p>
 
 <h2><span class="num">6</span>TTS 엔진 두 가지</h2>
 
@@ -384,7 +431,134 @@ GPU에 올릴 이유가 없다.</p>
 <p>XTTS는 음성 복제가 되지만 한국어를 로마자로 바꿔 읽기 때문에 외국인이 한국어를 읽는 것처럼
 들린다. 정렬 품질도 같이 나빠진다. 그래서 기본을 MeloTTS로 두었다.</p>
 
-<h2><span class="num">7</span>지금 상태</h2>
+<h2><span class="num">7</span>음성 입력</h2>
+
+<h3>왜 faster-whisper인가</h3>
+<p>CTranslate2 런타임이라 <code>transformers</code>와 무관하다. MeloTTS가
+<code>transformers==4.27.4</code>를 못박아 <code>--no-deps</code>로 설치돼 있는데,
+transformers 기반 whisper를 얹으면 그 핀 충돌에 같이 묶인다.</p>
+
+<p>모델은 <code>large-v3-turbo</code>, <code>int8_float16</code>으로 돌린다.
+<code>float16</code>이 0.3초쯤 빠르지만 VRAM이 0.9GB에서 1.6GB로 는다. 8GB 카드에
+MeloTTS·wav2vec2·메타휴먼이 같이 올라가 있어 정확도 차이가 거의 없는 쪽을 골랐다.</p>
+
+<p>두 가지 옵션이 중요하다.</p>
+
+<ul>
+  <li><code>vad_filter=True</code> — 무음 구간에서 whisper는 학습 데이터의 자막 상투구를
+  지어낸다("시청해주셔서 감사합니다"). Silero VAD가 무음을 먼저 잘라내 이걸 막는다</li>
+  <li><code>condition_on_previous_text=False</code> — 켜두면 앞 문장을 조건으로 삼아 짧은
+  발화에서 같은 말을 반복하는 루프에 빠진다</li>
+</ul>
+
+<h3>말하는 중에 글자가 실시간으로 찍히는 원리</h3>
+
+<div class="callout">
+  <p>whisper 인코더는 입력을 무조건 30초로 패딩한다.
+  <strong>그래서 인식 비용이 길이와 거의 무관하다.</strong></p>
+</div>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>녹음 길이</th><th>인식 시간</th></tr></thead>
+  <tbody>
+    <tr><td>4.3초</td><td>0.38초</td></tr>
+    <tr><td>8.7초</td><td>0.39초</td></tr>
+    <tr><td>17.4초</td><td>0.44초</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>이 성질 덕분에 조각을 이어 붙이는 스트리밍 구조가 필요 없다. 1초마다
+<strong>지금까지 녹음된 전체</strong>를 다시 보내 통째로 다시 받아적으면 된다.
+클라이언트가 버퍼를 들고 있으므로 서버는 완전히 무상태다.</p>
+
+<p>대신 두 가지 한계가 따라온다.</p>
+
+<ul>
+  <li>글자 단위가 아니라 1초 단위로 갱신된다</li>
+  <li>문장이 길어지면 앞부분 해석이 바뀔 수 있다. "사과" → "사과가 아니라"</li>
+</ul>
+
+<p>앞 요청의 답이 오기 전에는 다음 것을 보내지 않는다. 인식이 느려지면 갱신 간격이
+알아서 벌어진다.</p>
+
+<p><strong>전송량이 이 구조의 천장이다.</strong> 48kHz 모노 16비트면 초당 96KB씩 늘고
+매번 처음부터 다시 보낸다. 그래서 한 발화가 60초(<code>MaxRecordSeconds</code>)를 넘으면
+거기서 끊는다.</p>
+
+<h3>대화 모드 두 가지</h3>
+
+<p>시작할 때 고르고, 대화 중에도 바꿀 수 있다. 마이크를 열고 실시간으로 받아적는 부분은
+둘이 같다. <strong>다른 건 언제 보내느냐뿐이다.</strong></p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th></th><th>실시간 대화</th><th>푸시 투 토크</th></tr></thead>
+  <tbody>
+    <tr><td>마이크 열기</td><td>모드를 고르는 즉시</td><td>마이크 버튼을 누를 때</td></tr>
+    <tr><td>무음 800ms</td><td>자동 전송</td><td>무시, 계속 녹음</td></tr>
+    <tr><td>마이크 버튼 재누름</td><td>취소 (녹음 버림)</td><td>말 끝냄 → 받아적어 입력란에</td></tr>
+    <tr><td>전송</td><td>자동</td><td>사용자가 엔터/보내기</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>실시간은 대화가 자연스럽지만 잘못 인식된 문장이 그대로 나간다. 푸시 투 토크는 느리지만
+고칠 수 있다.</p>
+
+<h3>자기 목소리에 자기가 대답하는 걸 막는 법</h3>
+
+<p>AI가 말하는 동안 마이크를 닫는다. 스피커 소리가 그대로 들어오면 방금 자기가 한 말을
+질문으로 받아 무한 루프가 된다. 헤드폰을 써도 이 편이 안전하다.</p>
+
+<p>닫혀 있는 동안 버튼이 회색이 되고 입력란에 "마이크 꺼짐" 안내가 뜬다. 상태 표시는
+한 줄로 모았다.</p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>상태</th><th>표시</th></tr></thead>
+  <tbody>
+    <tr><td>마이크 열림</td><td><code>● 녹음 중</code></td></tr>
+    <tr><td>닫혔고 받아적기 대기</td><td><code>텍스트로 변환 중...</code></td></tr>
+    <tr><td>그 외</td><td>현재 모드 이름</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>말이 끝났는지 어떻게 아나</h3>
+
+<p>소리 크기(RMS)만 본다. 라이브러리를 붙일 만한 일이 아니고, 마이크 버튼으로 이미 한 번
+걸러진 뒤다. <code>conv.SpeechLevel</code>(기본 0.02)을 넘으면 말, 그 아래로
+<code>conv.SilenceMs</code>(기본 800ms)만큼 이어지면 끝으로 본다.</p>
+
+<p>마이크 감도와 방 소음에 따라 달라진다. PIE 콘솔에서 <code>conv.MicDebug 1</code>을 켜면
+0.5초마다 실제 RMS가 로그에 찍힌다. 말할 때와 조용할 때 값을 보고 그 사이에서 고른다.</p>
+
+<h3>받아적은 뒤 바로 안 보내는 이유</h3>
+
+<p>받아적기가 도착한 그 프레임에 전송하면 입력란이 같은 프레임에 비워진다. 방금 넣은
+글자가 한 번도 그려지지 않고 사라진다. <code>SendDelay</code>(기본 0.7초)만큼 띄워둔 뒤
+보낸다.</p>
+
+<p>이 시간이 곧 "뭐라고 인식됐는지 읽을 시간"이다. 길게 잡으면 확인하기 편하지만 발화 사이
+공백이 그만큼 늘어난다.</p>
+
+<h3>클라이언트 쪽 선택</h3>
+
+<ul>
+  <li><strong>리샘플링을 안 한다.</strong> 48000 → 16000이 정확히 3배라 단순 솎아내기가
+  되지만 그러면 에일리어싱이 심하다. 제대로 하려면 저역 통과가 필요한데, faster-whisper가
+  PyAV로 이미 올바르게 리샘플한다. 장치 레이트 그대로 보낸다</li>
+  <li><strong><code>Audio::FAudioCapture</code>를 쓴다.</strong>
+  <code>UAudioCaptureComponent</code>는 마이크 입력을 <em>재생</em>하는 물건이지 PCM을
+  꺼내는 물건이 아니다</li>
+  <li><strong><code>Build.cs</code>에 <code>AudioCapture</code>를 넣어야 한다.</strong>
+  <code>AudioCaptureCore</code>만 넣으면 컴파일은 되지만 런타임에 장치를 못 찾는다. 실제
+  구현(<code>AudioCaptureWasapi</code>)을 등록하는 건 플러그인 모듈 쪽이다</li>
+</ul>
+
+<h2><span class="num">8</span>지금 상태</h2>
 
 <p><strong>서버는 완성됐다.</strong> UE 없이 전체 파이프라인이 검증됐다.</p>
 
@@ -392,9 +566,10 @@ GPU에 올릴 이유가 없다.</p>
 <table>
   <thead><tr><th>검증</th><th>결과</th></tr></thead>
   <tbody>
-    <tr><td>단위 테스트 56개</td><td class="ok">통과 (모델 없이 1초)</td></tr>
+    <tr><td>단위 테스트 70개</td><td class="ok">통과 (모델 없이 2초)</td></tr>
     <tr><td>TTS 스모크</td><td class="ok">melo·xtts 양쪽 통과</td></tr>
     <tr><td>정렬 스모크</td><td class="ok">통과</td></tr>
+    <tr><td>STT 스모크</td><td class="ok">통과 (TTS 출력을 다시 받아적는 왕복)</td></tr>
     <tr><td>통합 왕복</td><td class="ok">통과</td></tr>
     <tr><td>LLM 죽었을 때</td><td class="ok">error 프레임, 서버 생존</td></tr>
   </tbody>
@@ -409,7 +584,9 @@ GPU에 올릴 이유가 없다.</p>
   <tbody>
     <tr><td>첫 프레임까지</td><td class="ok">2577ms</td></tr>
     <tr><td>3문장 턴 전체</td><td>15.7초</td></tr>
-    <tr><td>VRAM 합계</td><td>3.7GB / 8GB</td></tr>
+    <tr><td>STT 모델 로딩</td><td>27초 (기동 시 1회)</td></tr>
+    <tr><td>STT 인식 (예열 후)</td><td class="ok">0.39초</td></tr>
+    <tr><td>VRAM 합계</td><td>4.6GB / 8GB</td></tr>
   </tbody>
 </table>
 </div>
@@ -418,15 +595,21 @@ GPU에 올릴 이유가 없다.</p>
 턴 전체가 25초로 늘어난다.</p>
 
 <div class="callout">
+  <p><strong>GPU 경합에 주의한다.</strong> 같은 STT 측정이 에디터를 켠 채로는 2.3초,
+  끄면 0.39초가 나왔다. 6배 차이다. 실사용 값은 그 사이 어딘가다.</p>
+</div>
+
+<div class="callout">
   <p><strong>CUDA 프로세스를 여러 개 띄우면 안 된다.</strong> 서버를 두 개 동시에 실행했더니
   Ollama의 llama-server가 <code>CUDA error: shared object initialization failed</code>로 죽었다.
   VRAM 총량 문제가 아니라 컨텍스트 충돌이다. (LLM을 원격으로 옮긴 뒤로는 해당 없다.)</p>
 </div>
 
-<p><strong>UE 클라이언트는 대화가 도는 상태다 (2026-08-06).</strong> 입력 → 응답 → 오디오 재생 →
-말풍선 표시까지 확인했다. 남은 건 입 모양이다.</p>
+<p><strong>UE 클라이언트는 대화가 도는 상태다.</strong> 입력 → 응답 → 오디오 재생 →
+말풍선 표시까지 확인했다 (2026-08-06). 그 뒤로 viseme 재생(<code>VisemeDriver</code>)과
+음성 입력이 붙었고 <strong>컴파일까지는 검증됐지만 PIE 실사용 확인은 아직이다.</strong></p>
 
-<h2><span class="num">8</span>실행 방법</h2>
+<h2><span class="num">9</span>실행 방법</h2>
 
 <pre><code>server/run.bat</code></pre>
 
@@ -434,24 +617,44 @@ GPU에 올릴 이유가 없다.</p>
 
 <pre><code>cd server && .venv/Scripts/python -m uvicorn app.main:app --port 8000</code></pre>
 
-<p><code>모델 로딩 완료</code> 로그가 찍힌 뒤에 접속한다. UE 없이 확인하려면:</p>
+<p><code>모델 로딩 완료</code> 로그가 찍힌 뒤에 접속한다. 모델 세 개를 올리므로 2분쯤
+걸린다. 코드를 고친 뒤 다시 띄울 때는:</p>
+
+<pre><code>server/restart.bat</code></pre>
+
+<p>8000 포트를 잡고 있는 서버를 죽이고 다시 띄운다. <code>uvicorn --reload</code>는 못 쓴다 —
+파일이 바뀔 때마다 모델을 처음부터 다시 올린다.</p>
+
+<p>UE 없이 확인하려면:</p>
 
 <pre><code>cd server && .venv/Scripts/python scripts/ws_client.py "오늘 뭐 했어?"</code></pre>
 
-<h2><span class="num">9</span>다음 단계</h2>
+<p>받아적기만 따로 보려면 (녹음 파일 없이 TTS 출력을 되먹인다):</p>
 
-<p>UE 클라이언트의 오디오·통신·UI는 끝났다. 남은 것은 둘이다.</p>
+<pre><code>cd server && .venv/Scripts/python scripts/smoke_stt.py</code></pre>
+
+<h2><span class="num">10</span>다음 단계</h2>
+
+<p>서버는 완성됐고 클라이언트는 통신·오디오·UI·음성 입력이 다 붙었다. 남은 것은 검증과
+튜닝이다.</p>
 
 <ol>
-  <li><strong>viseme 재생</strong> — 서버가 주는 viseme 타임라인을 메타휴먼 얼굴 커브에 반영한다.
-  <code>USpeechQueue::GetPlaybackMs()</code>와 <code>GetCurrentFrame().Visemes</code>가 이미 준비돼 있다.
-  <code>CTRL_expressions_jawOpen</code> 하나만으로 <code>AA</code>/<code>NN</code>/<code>KK</code>/<code>sil</code>
-  4종이 동작하므로, 나머지 커브 이름을 다 찾기 전에 시작할 수 있다.</li>
+  <li><strong>PIE 실사용 확인</strong> — viseme 재생과 두 대화 모드가 아직 화면에서
+  확인되지 않았다. 컴파일만 통과한 상태다.</li>
+  <li><strong><code>conv.SpeechLevel</code> 기본값</strong> — 무음 감지가 안 걸린다는 보고가
+  있다. 마이크의 노이즈 플로어가 0.02보다 높다는 뜻이다. <code>conv.MicDebug 1</code>로
+  실측해서 정해야 한다. 실시간 모드의 자동 전송이 이 값 하나에 달려 있다.</li>
   <li><strong>첫 발화 지연</strong> — 목표는 3초인데 실측 6.7초다. 어느 단계가 먹는지 계측이 없다.</li>
 </ol>
 
-<p>그다음이 STT다. 마이크 입력을 텍스트로 바꿔 지금의 채팅 입력 자리에 넣으면 된다.
-계약이 바뀌지 않으므로 서버는 <code>user_message</code>를 만드는 경로만 늘리면 된다.</p>
+<p>알고 있지만 아직 안 고친 것 둘.</p>
+
+<ul>
+  <li><code>align.py</code>가 어휘에 없는 음절(팁, 늑, 콕 등)을 만나면 예외를 던지고 균등
+  분배로 떨어진다. 입 모양이 소리보다 밀린다</li>
+  <li>LLM이 JSON이나 백틱을 뱉으면 MeloTTS가 <code>KeyError</code>로 죽는다. 자막만 나가고
+  소리가 없다</li>
+</ul>
 
 <footer>
   설계 문서 <code>docs/superpowers/specs/2026-07-30-local-conversational-ai-design.md</code> ·
